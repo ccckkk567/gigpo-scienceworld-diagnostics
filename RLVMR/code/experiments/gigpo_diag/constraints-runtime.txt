@@ -15,3 +15,4 @@ tensordict==0.6.2
 peft==0.15.2
 scienceworld==1.2.3
 xgrammar==0.1.16
+pyarrow==19.0.1

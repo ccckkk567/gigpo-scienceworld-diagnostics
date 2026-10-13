@@ -42,6 +42,7 @@ if [[ "$GIGPO_ENV" == appworld ]]; then
   gigpo_pip_install 'antlr4-python3-runtime==4.9.3' -c experiments/gigpo_diag/constraints-runtime.txt
 fi
 "$GIGPO_VENV/bin/python" -I -m pip check
+"$GIGPO_VENV/bin/python" -I experiments/gigpo_diag/check_data_stack.py
 python -c 'import sys,verl,torch,vllm; print("RUNTIME",sys.executable,verl.__file__,torch.__version__,vllm.__version__,flush=True); assert torch.cuda.is_available()'
 "$GIGPO_VENV/bin/python" -I -m pip freeze > "$GIGPO_VENV/gigpo-pip-freeze.txt"
 # One shared immutable initialization; independent venvs and editable installations.

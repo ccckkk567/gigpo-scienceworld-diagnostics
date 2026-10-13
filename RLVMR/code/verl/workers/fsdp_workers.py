@@ -483,6 +483,8 @@ class ActorRolloutRefWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def generate_sequences(self, prompts: DataProto):
+        from experiments.gigpo_diag import diagnostics as diag
+        diag.set_update(prompts.meta_info.get("diag_policy_version", diag.current_update()))
         # Support all hardwares
         prompts = prompts.to(torch.cuda.current_device())
 

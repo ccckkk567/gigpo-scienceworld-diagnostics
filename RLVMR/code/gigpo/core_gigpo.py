@@ -118,6 +118,8 @@ def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
     step_advantages = step_norm_reward(step_rewards, eos_mask, step_group_uids, epsilon, remove_std)
 
     scores = episode_advantages + step_advantage_w * step_advantages
+    from experiments.gigpo_diag import diagnostics as diag
+    diag.capture_core(index, step_group_uids, token_level_rewards, step_rewards, episode_advantages, step_advantages, scores, eos_mask, step_advantage_w)
     return scores, scores
 
 

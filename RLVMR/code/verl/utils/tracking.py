@@ -1,3 +1,4 @@
+from experiments.gigpo_diag import diagnostics as diag
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -57,23 +58,19 @@ class Tracking(object):
             self.logger['mlflow'] = _MlflowLoggingAdapter()
 
         if "swanlab" in default_backend:
-            import swanlab
             import os
-
-            SWANLAB_API_KEY = os.environ.get("SWANLAB_API_KEY", None)
-            SWANLAB_LOG_DIR = os.environ.get("SWANLAB_LOG_DIR", "swanlog")
-            SWANLAB_MODE = os.environ.get("SWANLAB_MODE", "cloud")
-            if SWANLAB_API_KEY:
-                swanlab.login(SWANLAB_API_KEY)  # NOTE: previous login information will be overwritten
-            swanlab.init(project=project_name,
-                         experiment_name=experiment_name,
-                         config={
-                             "FRAMEWORK": "veRL",
-                             **config
-                         },
-                         logdir=SWANLAB_LOG_DIR,
-                         mode=SWANLAB_MODE)
-            self.logger["swanlab"] = swanlab
+            try:
+                import swanlab
+                run = swanlab.init(project=project_name, experiment_name=experiment_name,
+                                   config={"FRAMEWORK": "verl", **(config or {})},
+                                   logdir=os.environ.get("SWANLAB_LOG_DIR", "swanlog"),
+                                   mode=os.environ.get("SWANLAB_MODE", "cloud"))
+                self.logger["swanlab"] = swanlab
+                diag.tracker_status("initialized", mode=os.environ.get("SWANLAB_MODE", "cloud"),
+                                    url=getattr(run, "url", None))
+            except Exception as exc:
+                diag.tracker_status("local_only", error_type=type(exc).__name__)
+                print("SwanLab unavailable; continuing with local diagnostics", flush=True)
 
         if 'vemlp_wandb' in default_backend:
             import os
@@ -102,9 +99,16 @@ class Tracking(object):
             self.logger['console'] = self.console_logger
 
     def log(self, data, step, backend=None):
+        diag.record_metrics(data, step)
         for default_backend, logger_instance in self.logger.items():
             if backend is None or default_backend in backend:
-                logger_instance.log(data=data, step=step)
+                if default_backend == "swanlab":
+                    try:
+                        logger_instance.log(data=data, step=step)
+                    except Exception as exc:
+                        diag.tracker_status("upload_failed_local_preserved", error_type=type(exc).__name__)
+                else:
+                    logger_instance.log(data=data, step=step)
 
     def __del__(self):
         if 'wandb' in self.logger:

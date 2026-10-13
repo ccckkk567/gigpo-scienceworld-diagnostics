@@ -1,3 +1,4 @@
+from experiments.gigpo_diag import diagnostics as diag
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -171,7 +172,9 @@ class DataParallelPPOActor(BasePPOActor):
             print(f"WARN: grad_norm is not finite: {grad_norm}")
             self.actor_optimizer.zero_grad()
         else:
+            diag_before = diag.parameter_sample(self.actor_optimizer)
             self.actor_optimizer.step()
+            diag.optimizer_completed(self.actor_optimizer, diag_before)
         return grad_norm
 
     def compute_log_prob(self, data: DataProto) -> torch.Tensor:
@@ -233,6 +236,7 @@ class DataParallelPPOActor(BasePPOActor):
         return log_probs
 
     def update_policy(self, data: DataProto):
+        diag.set_update(data.meta_info.get("diag_update_target", diag.current_update()))
         # make sure we are in training mode
         self.actor_module.train()
 

@@ -60,7 +60,7 @@ def run_ppo(config) -> None:
     os.environ["ENSURE_CUDA_VISIBLE_DEVICES"] = os.environ.get('CUDA_VISIBLE_DEVICES', '')
     if not ray.is_initialized():
         # this is for local ray cluster
-        ray.init(runtime_env={
+        ray.init(address="local", _temp_dir=os.environ.get("RAY_TMPDIR"), num_cpus=int(os.environ.get("SLURM_CPUS_PER_TASK", "32")), runtime_env={
             'env_vars': {
                 'TOKENIZERS_PARALLELISM': 'true',
                 'NCCL_DEBUG': 'WARN',
@@ -82,6 +82,8 @@ class TaskRunner:
         from omegaconf import OmegaConf
         pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
         OmegaConf.resolve(config)
+        from experiments.gigpo_diag.runtime import record_provenance
+        record_provenance(config)
 
         # download the checkpoint from hdfs
         local_path = copy_to_local(config.actor_rollout_ref.model.path)

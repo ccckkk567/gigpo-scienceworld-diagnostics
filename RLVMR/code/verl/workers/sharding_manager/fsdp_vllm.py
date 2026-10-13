@@ -1,3 +1,4 @@
+from experiments.gigpo_diag import diagnostics as diag
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -98,6 +99,7 @@ class FSDPVLLMShardingManager(BaseShardingManager):
                 ((name, param.full_tensor() if world_size != 1 else param) for name, param in params.items()))
             logger.info(f"vLLM load wegiths, loaded_params: {len(loaded_params)}")
 
+        diag.weights_loaded("fsdp_vllm/native_load_weights")
         log_gpu_memory_usage('After sync model weights in sharding manager', logger=logger)
 
         del params

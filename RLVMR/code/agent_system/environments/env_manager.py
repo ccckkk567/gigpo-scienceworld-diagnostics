@@ -250,6 +250,7 @@ class SciWorldEnvironmentManager(EnvironmentManagerBase):
         # add action_valid to infos
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
+            info['diag_executed_action'] = actions[i]
             info['full_output'] = full_output[i]
             info['action_available'] = to_numpy(action_available[i])
             info['score'] = info.get('score', -1)

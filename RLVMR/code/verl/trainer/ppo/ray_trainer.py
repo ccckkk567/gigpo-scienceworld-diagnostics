@@ -1,3 +1,4 @@
+from experiments.gigpo_diag import diagnostics as diag
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -139,6 +140,7 @@ import torch
 from verl.utils.torch_functional import masked_mean
 
 def apply_invalid_action_penalty(data: DataProto, invalid_action_penalty_coef=float):
+    diag.reward_boundary(data, "before_invalid_penalty")
     reward_tensor = data.batch['token_level_scores']
     if 'step_rewards' in data.batch.keys():
         step_rewards = data.batch['step_rewards']
@@ -162,6 +164,7 @@ def apply_invalid_action_penalty(data: DataProto, invalid_action_penalty_coef=fl
     
     valid_action_ratio = np.mean(data.non_tensor_batch['is_action_valid'].astype(np.float32)).item()
     metrics = {'valid_action_ratio': valid_action_ratio}
+    diag.reward_boundary(data, "after_invalid_penalty")
     return data, metrics
 
 
@@ -245,6 +248,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, step_a
         data.batch['advantages'] = advantages
         data.batch['returns'] = returns
     elif adv_estimator == AdvantageEstimator.GiGPO:
+        diag.set_advantage_ids(data)
         advantages, returns = core_gigpo.compute_gigpo_outcome_advantage(
             token_level_rewards=data.batch['token_level_rewards'], # for episode group reward computing
             step_rewards=data.batch['step_rewards'], # for step group reward computing
@@ -776,6 +780,8 @@ class RayPPOTrainer(object):
                                                            'latest_checkpointed_iteration.txt')
         with open(local_latest_checkpointed_iteration, 'w') as f:
             f.write(str(self.global_steps))
+        diag.save_sampler(self, local_global_step_folder)
+        diag.checkpoint(local_global_step_folder, self.global_steps)
 
     def _load_checkpoint(self):
         if self.config.trainer.resume_mode == 'disable':
@@ -865,6 +871,8 @@ class RayPPOTrainer(object):
 
         # load checkpoint before doing anything
         self._load_checkpoint()
+        diag.set_update(self.global_steps)
+        diag.restore_sampler(self)
 
         # perform validation before training
         # currently, we only support validation using the reward_function.
@@ -1025,7 +1033,10 @@ class RayPPOTrainer(object):
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor
                         with _timer('update_actor', timing_raw):
+                            if diag.enabled():
+                                batch.meta_info["diag_update_target"] = self.global_steps
                             actor_output = self.actor_rollout_wg.update_actor(batch)
+                            diag.update_completed(self.global_steps, metrics)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
                         metrics.update(actor_output_metrics)
 

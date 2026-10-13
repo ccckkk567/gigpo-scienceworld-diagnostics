@@ -1,0 +1,12 @@
+{
+  "kind": "synthetic_and_config_only",
+  "environment": "scienceworld",
+  "hydra_compose_passed": true,
+  "python_syntax_passed": true,
+  "train_batch": 16,
+  "group": 8,
+  "val_batch": 128,
+  "max_steps": 30,
+  "norm_mode": "mean_std_norm",
+  "actual_hpc_training_executed": false
+}

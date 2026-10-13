@@ -17,7 +17,6 @@ def _worker(remote, seed, task_nums, simplifications_preset, env_step_limit, jar
     env = ScienceWorldEnv("", jar_path, envStepLimit=env_step_limit)
     taskNames = env.get_task_names()
     random.seed(seed)
-    task_id, task_variation = random.choice(variations_idx)
     prev_score = 0
     try:
         while True:
@@ -36,15 +35,21 @@ def _worker(remote, seed, task_nums, simplifications_preset, env_step_limit, jar
                 isCompleted = done
                 prev_score = info['score']
                 info["won"] = isCompleted and info["score"] > 0
+                info["native_score_unrounded"] = float(env.server.getScore())
+                info["native_completed"] = bool(env.server.getCompleted())
+                info["strict_success"] = info["native_completed"] and info["native_score_unrounded"] >= 1.0
+                info["strict_definition"] = "ScienceWorld 1.2.3 Java completed and raw score >= 1; read-only, no reward override"
                 reward = compute_reward(info)
                 remote.send((observation, reward, isCompleted, info))
             elif cmd == 'reset':
-                if data is None:
-                    task_id, task_variation = random.choice(variations_idx)
-                    task_num = task_id
-                    taskName = taskNames[task_num]
-                else:
-                    variation_idx = data
+                if not isinstance(data, dict):
+                    raise ValueError("ScienceWorld reset requires explicit grouped assignment")
+                task_id, task_variation = int(data["task_id"]), int(data["variation_id"])
+                if (task_id, task_variation) not in {tuple(x) for x in variations_idx}:
+                    raise ValueError("Reset assignment is outside this split's task pool")
+                task_num = task_id
+                taskName = taskNames[task_id]
+                random.seed(int(data["reset_seed"]))
                 simplification_str = simplifications_preset if simplifications_preset else ""
                 env.load(taskName, task_variation, simplification_str)
                 observation, info = env.reset()
@@ -58,6 +63,16 @@ def _worker(remote, seed, task_nums, simplifications_preset, env_step_limit, jar
                 info["possible_actions"] = env.get_valid_action_object_combinations()
                 info['won'] = False
                 info['task_num'] = task_num
+                info['task_id'] = taskName
+                info['variation_id'] = task_variation
+                info['reset_seed'] = int(data['reset_seed'])
+                info['score'] = info.get('score', None)
+                from experiments.gigpo_diag.diagnostics import digest
+                info['initial_state_hash'] = digest({'observation': observation, 'objects': valid_objs,
+                                                     'possible_actions': sorted(info['possible_actions']),
+                                                     'score': info['score']})
+                info['simplifications_requested'] = simplification_str
+                info['initialization_semantics'] = 'Java task variation controls world; Python seed recorded separately'
                 prev_score = 0
                 remote.send((observation, info))
             elif cmd == 'close':
@@ -74,12 +89,12 @@ class SciWorldMultiProcessEnv(gym.Env):
         seed: int = 0,
         env_num: int = 1,
         group_n: int = 1,
-        task_nums: list = [1], 
-        split: str = "train", 
-        simplifications_preset: str = "", 
+        task_nums: list = [1],
+        split: str = "train",
+        simplifications_preset: str = "",
         env_step_limit: int = 100,
         jar_path: str = None,
-        variations_idx: list = None  
+        variations_idx: list = None
     ) -> None:
         super().__init__()
         self.group_n = group_n
@@ -91,8 +106,8 @@ class SciWorldMultiProcessEnv(gym.Env):
         self.simplifications_preset = simplifications_preset
         self.env_step_limit = env_step_limit
         self.jar_path = jar_path
-        random.seed(seed)
         self._rng = np.random.RandomState(seed)
+        self._reset_count = 0
         self._parent_remotes: list[mp.connection.Connection] = []
         self._workers: list[mp.Process] = []
         ctx = mp.get_context('spawn')
@@ -101,7 +116,7 @@ class SciWorldMultiProcessEnv(gym.Env):
             seed_i = seed + i
             worker = ctx.Process(
                 target=_worker,
-                args=(child_remote, seed_i, self.task_nums, self.simplifications_preset, 
+                args=(child_remote, seed_i, self.task_nums, self.simplifications_preset,
                       self.env_step_limit, self.jar_path, self.split, self.variations_idx),
                 daemon=True,
             )
@@ -131,9 +146,17 @@ class SciWorldMultiProcessEnv(gym.Env):
         return obs_list, reward_list, done_list, info_list
 
     def reset(self):
-        variations = [None for _ in range(self.num_processes)]
-        for remote, variation in zip(self._parent_remotes, variations):
-            remote.send(('reset', variation))
+        # Parent-only task RNG; replacement preserves independent group draws.
+        selected = self._rng.choice(len(self.variations_idx), size=self.env_num, replace=True)
+        seeds = self._rng.randint(0, 2**31 - 1, size=self.env_num)
+        assignments = []
+        for pool_index, reset_seed in zip(selected, seeds):
+            task_id, variation_id = self.variations_idx[int(pool_index)]
+            assignment = dict(task_id=int(task_id), variation_id=int(variation_id), reset_seed=int(reset_seed))
+            assignments.extend([assignment.copy() for _ in range(self.group_n)])
+        self._reset_count += 1
+        for remote, assignment in zip(self._parent_remotes, assignments):
+            remote.send(('reset', assignment))
         obs_list, info_list = [], []
         for i, remote in enumerate(self._parent_remotes):
             obs, info = remote.recv()
@@ -141,7 +164,17 @@ class SciWorldMultiProcessEnv(gym.Env):
             info_list.append(info)
             self.prev_available_actions[i] = info['available_actions']
             self.prev_possible_actions[i] = info["possible_actions"]
+        from experiments.gigpo_diag.diagnostics import verify_groups
+        verify_groups({'anchor': obs_list}, info_list, [i // self.group_n for i in range(self.num_processes)])
         return obs_list, info_list
+
+    def sampler_state(self):
+        name, keys, pos, gaussian, cached = self._rng.get_state()
+        return dict(name=name, keys=keys.tolist(), pos=pos, gaussian=gaussian, cached=cached, resets=self._reset_count)
+
+    def restore_sampler_state(self, state):
+        self._rng.set_state((state['name'], np.array(state['keys'], dtype=np.uint32), state['pos'], state['gaussian'], state['cached']))
+        self._reset_count = state['resets']
 
     @property
     def get_available_actions(self):
@@ -171,8 +204,8 @@ def build_sciworld_envs(
     seed: int = 0,
     env_num: int = 1,
     group_n: int = 1,
-    task_nums: Union[int, list] = 1, 
-    split: str = "train", 
+    task_nums: Union[int, list] = 1,
+    split: str = "train",
     simplifications_preset: str = "",
     env_step_limit: int = 100,
     jar_path: str = None,
@@ -188,4 +221,4 @@ def build_sciworld_envs(
         env_step_limit=env_step_limit,
         jar_path=jar_path,
         variations_idx=variations_idx
-    ) 
+    )

@@ -105,5 +105,38 @@ def science_reset_check():
     print('LIVE_GROUP_RESET_CHECK_PASSED groups=2 repeats=2 trajectories=0', flush=True)
 
 
+def science_reset_audit():
+    """Exact first training batch reset, no policy/model/optimizer, no retries."""
+    from agent_system.environments.env_package.sciworld.envs import build_sciworld_envs
+    from experiments.gigpo_diag.diagnostics import plain
+    import numpy as np
+    pool=json.loads(Path('agent_system/environments/env_package/sciworld/variations_idx/L0_idx.json').read_text())['train']
+    rng=np.random.RandomState(0)
+    selected=rng.choice(len(pool), size=16, replace=True)
+    seeds=rng.randint(0, 2**31-1, size=16)
+    out=Path(os.environ['GIGPO_RUN_DIR'])
+    assignments=[dict(group_slot=i,task_id=int(pool[int(index)][0]),variation_id=int(pool[int(index)][1]),
+                      reset_seed=int(seeds[i]),group_size=8) for i,index in enumerate(selected)]
+    (out/'assignments.json').write_text(json.dumps(assignments,indent=2),encoding='utf-8')
+    result={'training_updates':0,'policy_rollouts':0,'groups':16,'group_size':8,
+            'purpose':'first native training reset audit only',
+            'scienceworld_version':importlib.metadata.version('scienceworld'),
+            'code_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()}
+    env=None
+    try:
+        env=build_sciworld_envs(seed=0,env_num=16,group_n=8,variations_idx=pool,simplifications_preset='easy')
+        obs,infos=env.reset()
+        (out/'resets.json').write_text(json.dumps(plain({'observations':obs,'infos':infos}),indent=2),encoding='utf-8')
+        result['status']='reset_guard_passed'
+    except Exception as exc:
+        result.update(status='reset_audit_failed',error=f'{type(exc).__name__}: {exc}')
+        raise
+    finally:
+        (out/'result.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
+        print('SCIENCE_RESET_AUDIT '+json.dumps(result),flush=True)
+        if env is not None:
+            env.close()
+
+
 if __name__ == '__main__':
-    {'prepare-model':prepare_model, 'science-reset-check':science_reset_check}[sys.argv[1]]()
+    {'prepare-model':prepare_model, 'science-reset-check':science_reset_check, 'science-reset-audit':science_reset_audit}[sys.argv[1]]()

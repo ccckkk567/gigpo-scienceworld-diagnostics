@@ -124,13 +124,37 @@ def begin_rollout(obs, infos, uids, trajs, is_train, config):
 
 
 def verify_groups(obs, infos, uids):
-    """Training correctness guard, deliberately separate from optional logging."""
+    """Training correctness guard; evidence logging never weakens rejection."""
+    if not (len(obs['anchor']) == len(infos) == len(uids)):
+        raise RuntimeError("Group reset cardinality mismatch; refusing advantage update")
     grouped = defaultdict(list)
     for i, uid in enumerate(uids):
-        grouped[str(uid)].append(digest({**identity(infos[i]), "anchor": obs["anchor"][i],
-                                       "score": infos[i].get("score"), "state": infos[i].get("initial_state_hash")}))
-    if any(len(set(hashes)) != 1 for hashes in grouped.values()):
-        raise RuntimeError("Mixed task/variation/start in native collector uid; refusing advantage update")
+        state = {**identity(infos[i]), "anchor": obs["anchor"][i],
+                 "score": infos[i].get("score"), "state": infos[i].get("initial_state_hash")}
+        grouped[str(uid)].append((i, state, digest(state)))
+    failures = []
+    for uid, rows in grouped.items():
+        if len({row[2] for row in rows}) == 1:
+            continue
+        fields = [key for key in rows[0][1]
+                  if len({digest(row[1][key]) for row in rows}) != 1]
+        component_keys = set().union(*(infos[i].get('initial_state_components', {}).keys() for i, _, _ in rows))
+        components = [key for key in sorted(component_keys)
+                      if len({digest(infos[i].get('initial_state_components', {}).get(key)) for i, _, _ in rows}) != 1]
+        failures.append({'group_uid': uid, 'differing_fields': fields,
+                         'differing_state_components': components,
+                         'workers': [{'worker_slot': i, 'guard_state': state, 'guard_hash': hashed,
+                                      'reset_info': infos[i]} for i, state, hashed in rows]})
+    if failures:
+        summaries = [{k:v for k,v in row.items() if k != 'workers'} for row in failures]
+        print('GROUP_RESET_MISMATCH ' + json.dumps(summaries, ensure_ascii=False), flush=True)
+        if enabled():
+            try:
+                write('group_guard_failures', failures)
+            except Exception as exc:
+                print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
+        raise RuntimeError("Mixed task/variation/start in native collector uid; refusing advantage update; "
+                           "see GROUP_RESET_MISMATCH and group_guard_failures JSONL")
 
 
 def extraction(raw, env):

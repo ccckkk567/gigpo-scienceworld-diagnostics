@@ -95,3 +95,27 @@ workers. Do not change native num_proc, datasets, tasks or training recipe.
 AppWorld gets the same preventative fix; no remote running job is modified.
 Local Linux validation is recorded in IPC_PATH_VALIDATION.json. The actual
 HPC retry remains necessary; no preparation/training success is claimed yet.
+
+## ScienceWorld train 160625: first grouped training reset rejected
+
+HPC completed model initialization and 128 initial reference-evaluation episodes,
+then the reset guard rejected the first training batch before policy updates.
+The log alone cannot identify the mismatching group or field. Do not attribute
+this to formatting or nondeterminism without raw evidence, and do not weaken
+the existing comparison. Reference val/success_rate=0.0234375 is not strict success.
+
+Local ScienceWorld 1.2.3 / Java 11: compared the seed-0 first 16 assignments in
+two live Java environments, then repeated with fresh Java instances per task;
+all paired observations, task descriptions, object lists, valid commands and
+scores matched. This does not reproduce the 128-worker Linux run and does not
+prove the HPC guard is incorrect. Preserve initial hash components verbatim and
+record every rejected group's raw reset info, hashes and differing fields before
+raising the original failure. Logging failures cannot bypass this guard.
+
+reset_audit.sbatch runs the exact native seed-0 first 16x8 training reset on the
+existing HPC environment, with no model, optimizer, Ray or evaluation workers.
+It requests one testqueue GPU node for compatibility with the installed Python
+module (the reset itself is CPU/Java work), 32 CPUs, 192 GiB, and 20 minutes.
+It does not retry/resample assignments or change pool, reward, prompt or seeds.
+This is diagnosis, not a repair of an as-yet unidentified mismatch. Inspect its
+evidence before another full training submission. Existing failed run retained.

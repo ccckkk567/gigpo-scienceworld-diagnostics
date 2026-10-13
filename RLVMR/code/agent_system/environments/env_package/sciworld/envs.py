@@ -68,9 +68,10 @@ def _worker(remote, seed, task_nums, simplifications_preset, env_step_limit, jar
                 info['reset_seed'] = int(data['reset_seed'])
                 info['score'] = info.get('score', None)
                 from experiments.gigpo_diag.diagnostics import digest
-                info['initial_state_hash'] = digest({'observation': observation, 'objects': valid_objs,
-                                                     'possible_actions': sorted(info['possible_actions']),
-                                                     'score': info['score']})
+                info['initial_state_components'] = {'observation': observation, 'objects': valid_objs,
+                                                    'possible_actions': sorted(info['possible_actions']),
+                                                    'score': info['score']}
+                info['initial_state_hash'] = digest(info['initial_state_components'])
                 info['simplifications_requested'] = simplification_str
                 info['initialization_semantics'] = 'Java task variation controls world; Python seed recorded separately'
                 prev_score = 0

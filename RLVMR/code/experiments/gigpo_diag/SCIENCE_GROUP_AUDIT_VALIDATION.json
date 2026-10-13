@@ -1,0 +1,22 @@
+{
+  "local_platform": "Windows",
+  "scienceworld": "1.2.3",
+  "java": "11.0.25",
+  "real_reset_checks": [
+    {
+      "source": "science_group_reset_raw.json",
+      "groups": 16,
+      "workers_per_comparison": 2,
+      "mismatches": 0
+    },
+    {
+      "source": "science_group_reset_fresh_raw.json",
+      "groups": 16,
+      "workers_per_comparison": 2,
+      "mismatches": 0
+    }
+  ],
+  "synthetic_failure_evidence": "passed; raw components persisted; logging failure cannot bypass guard",
+  "native_diagnostic_regressions": "5 passed",
+  "hpc_mismatch_cause": "unknown; awaiting reset audit"
+}

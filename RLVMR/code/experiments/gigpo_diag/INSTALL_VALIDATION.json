@@ -1,0 +1,25 @@
+{
+  "scope": "installation_repair_local_validation",
+  "environment": "scienceworld",
+  "python_version": "3.12",
+  "target_platform": "x86_64-manylinux_2_28",
+  "resolver": "uv 0.11.7 pip compile",
+  "dependency_resolution_passed": true,
+  "resolved_package_count": 212,
+  "resolution_input_sha256": "7d486686121e2f2595f1239424a30a62fb58c0fb8fc3d6bb295dea0b17b1b7f1",
+  "resolved_graph_sha256": "5ef662613e969259155d5576357c8770117a52bfe4b6af684b69b7c7a2dc168d",
+  "regression_tests_passed": 5,
+  "shell_syntax_passed": true,
+  "checks": [
+    "external module pip rejected",
+    "isolated Python ignores module PYTHONPATH",
+    "clean environment passes",
+    "pip accepts constraints without extras",
+    "transient index error retries successfully",
+    "persistent index error stops after 3 attempts",
+    "dependency conflict fails without retry"
+  ],
+  "training_launcher_changed": false,
+  "gpu_install_of_repaired_setup_executed": false,
+  "actual_training_updates_verified": 0
+}

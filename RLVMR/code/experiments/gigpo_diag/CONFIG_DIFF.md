@@ -13,3 +13,28 @@ Reference: `examples/gigpo_trainer/run_sciworld.sh`, upstream commit in SOURCE.j
 - AppWorld-only: native one-response code turn, train/dev split, max_interactions aligned to max_steps. `multi_episode_rollout=False`, success_coef=0 and prompt_type=vanilla; the latter two are not read by the AppWorld ordinary prompt/reward path (ALF/WebShop shaping is a separate branch). No claim that AppWorld's previous default success_coef caused shaping. 16*8 + 16*1 = 144 services derived from resolved config. Unique job/worker/reset experiments preserve native API traces. No global process cleanup. AppWorld library pinned to upstream Git commit 42b5bcf3cd334fee33f0c37c02070a9f5807add5 per Git-install recipe (PyPI 0.1.3.post1 requires pydantic1 and conflicts with vLLM).
 
 Native schedules and environment RNG may not resume bitwise identically (ALFWorld/TextWorld and AppWorld worker state not checkpointed). ScienceWorld task sampler sidecar restores its newly introduced independent RNG. Unknown labels remain null. No actual training has run locally; only HPC results can establish updates or learning.
+
+## Installation repair after first HPC attempt (2026-10-13)
+
+Observed: ALFWorld job 160221 built/installed flash-attn, then pip rejected
+`ray[default]` in the constraints file. AppWorld job 160225 failed resolution:
+vLLM 0.8.5 requires OpenTelemetry SDK 1.26.x but Ray[default] 2.49.0 requires >=1.30.
+ScienceWorld job 160223 received an unknown Content-Type for the datasets index;
+the same datasets 3.6.0 was found in the other jobs. Module pip/setuptools also
+leaked from /apps/spack into the activated venv in all logs.
+
+Separate constraints-runtime.txt strips extras; requirements-runtime.txt retains
+the requested extras. Clear module PYTHONPATH/PYTHONHOME in both setup and train,
+invoke installation using the absolute venv Python with -I, and verify imported
+pip + distribution metadata reside in that venv. Retry only recognized transient
+transport/index errors, at most three attempts. Each project gets its own pip cache.
+Existing venvs and installed flash-attn are reused. No directory/cache purge or
+global pip installation. Training recipe, model, reward and algorithm are unchanged.
+
+ScienceWorld resolver check also found that the required xgrammar 0.1.16 is no
+longer listed by PyPI (release JSON 404). Keep vLLM 0.8.2 and its exact xgrammar
+version: install xgrammar from the official v0.1.16 source commit
+989222175c2a30fb7987d8bcce35bec1bf6817f2. pip checks out its submodules and builds
+inside the allocated prepare job; CMake parallelism is bounded to four workers.
+Source: https://github.com/mlc-ai/xgrammar/releases/tag/v0.1.16 . No alternate
+package version or no-deps workaround is used.

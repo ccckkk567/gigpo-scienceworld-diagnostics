@@ -13,3 +13,4 @@ ray[default]==2.48.0
 tensordict==0.6.2
 peft==0.15.2
 scienceworld==1.2.3
+xgrammar @ git+https://github.com/mlc-ai/xgrammar.git@989222175c2a30fb7987d8bcce35bec1bf6817f2

@@ -218,3 +218,44 @@ Reference source at the recipe's locked upstream commit:
 https://github.com/Tencent/digitalhuman/blob/7e22784db51070fd3ed9b03a23edfca59cb5e800/RLVMR/code/agent_system/environments/env_package/sciworld/ScienceWorld/simulator/src/main/scala/scienceworld/input/InputParser.scala
 Action.toTemplate preserves ordered UUID/type arguments; AgentInterface exposes
 both text and JSON from mkPossibleActions in the same source tree.
+
+
+## ScienceWorld 160841: isolate compiler caches on actual node-local storage
+
+Run scienceworld-qwen25-15b-gigpo-160841-20261013T133011Z used 1eb0da9,
+torch 2.6.0, Triton 3.2.0 and vLLM 0.8.2. Its small live reset preflight passed.
+Initial validation generation failed before any completed evaluation batch or
+optimizer update: loading __triton_launcher.so raised ImportError / ENOENT.
+The path was under TMPDIR/work/torchinductor_linz3/triton/0. Despite its /tmp
+prefix, work is a symlink to shared scratch. The user's later read found the
+same .so file present (25760 bytes). This supports a transient cache visibility
+or concurrent-access failure, not a missing installed package. The exact shared
+filesystem/loader race has not been established or locally reproduced.
+
+common.sh now assigns TORCHINDUCTOR_CACHE_DIR and TRITON_CACHE_DIR under the
+job's private node-local mktemp directory, outside the work symlink. Ray worker
+creation overrides both paths with separate directories keyed by the full actor
+name (worker group and rank) through runtime_env, before the actor imports
+Torch/Triton. This avoids sharing files even when different workers expose their
+GPU as logical device 0. The current recipe remains one node / two GPUs.
+Cache path mappings are persisted under compiler_cache_workers/*.json, and
+environment provenance now includes Triton and compiler-cache placement.
+
+No caches are deleted, no training batches/actions are retried, and no errors
+are swallowed. Bulk temp files, logs and checkpoints stay on scratch. Existing
+run directories are retained. Torch compile, attention backend, CUDA graphs,
+tensor parallelism, prompts, rewards, reset guards and sampling are unchanged.
+Fresh caches can add compilation time. No dependency/prepare rerun is needed.
+
+Validation: six local regression tests passed, covering separate worker/group paths,
+repeat configuration preserving
+cache contents, child-process environment propagation and concurrent same-key
+writes in separate directories, provenance records, and fail-fast unusable paths.
+Shell syntax and Python compilation checks also passed locally. These checks do not
+exercise Linux GPU compilation or reproduce the original shared-filesystem race;
+HPC evaluation and optimizer progress remain unverified pending a new run.
+
+Primary source for supported cache environment variables and launcher loading:
+https://github.com/pytorch/pytorch/blob/v2.6.0/torch/_inductor/runtime/cache_dir_utils.py
+https://github.com/triton-lang/triton/blob/v3.2.0/python/triton/runtime/cache.py
+https://github.com/triton-lang/triton/blob/v3.2.0/third_party/nvidia/backend/driver.py

@@ -270,6 +270,10 @@ class RayWorkerGroup(WorkerGroup):
                 cia_name = match.group(1) if match else cia_name  # "ActorClass(Obj)" -> "Obj"
                 name = f"{self.name_prefix}{cia_name}_{pg_idx}:{local_rank}"  # e.g. Worker_2:5
 
+                # Compiler caches are local to this job and actor, set before
+                # the remote process imports Torch/Triton. No-op outside the recipe.
+                from experiments.gigpo_diag.compiler_cache import worker_compiler_cache_env
+                env_vars.update(worker_compiler_cache_env(name))
                 ray_cls_with_init.update_options({'runtime_env': {'env_vars': env_vars}, 'name': name})
 
                 if detached:

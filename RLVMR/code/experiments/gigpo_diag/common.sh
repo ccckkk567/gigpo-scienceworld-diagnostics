@@ -43,6 +43,15 @@ ln -s "$GIGPO_JOB_TMPDIR" "$GIGPO_TMP_ALIAS_DIR/work"
 export TMPDIR="$GIGPO_TMP_ALIAS_DIR/work"
 export TMP="$TMPDIR" TEMP="$TMPDIR"
 echo "GIGPO_TMPDIR=$TMPDIR storage=$GIGPO_JOB_TMPDIR"
+# TMPDIR/work points to shared scratch. Compiled libraries must instead use
+# actual node-local storage; every job gets a fresh private mktemp directory.
+# The current recipe is single-node. Ray GPU actors receive separate subdirs
+# before importing Torch/Triton (see single_controller/ray/base.py).
+export GIGPO_COMPILER_CACHE_ROOT="$GIGPO_TMP_ALIAS_DIR/compiler-cache"
+export TORCHINDUCTOR_CACHE_DIR="$GIGPO_COMPILER_CACHE_ROOT/driver/torchinductor"
+export TRITON_CACHE_DIR="$GIGPO_COMPILER_CACHE_ROOT/driver/triton"
+mkdir -p "$TORCHINDUCTOR_CACHE_DIR" "$TRITON_CACHE_DIR"
+echo "GIGPO_COMPILER_CACHE_ROOT=$GIGPO_COMPILER_CACHE_ROOT worker_policy=per_ray_actor"
 # AF_UNIX socket paths are short and unique on each compute node.
 export RAY_TMPDIR="/tmp/cjk-ggp-${SLURM_JOB_ID:-local}-${GIGPO_ENV:0:3}"
 if [[ "$GIGPO_ENV" != alfworld ]]; then export VLLM_USE_V1=0; fi

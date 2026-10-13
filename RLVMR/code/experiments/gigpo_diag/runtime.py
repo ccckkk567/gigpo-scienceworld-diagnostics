@@ -51,13 +51,21 @@ def record_provenance(config):
         assert sha(model/name) == expected, f'Model/tokenizer file changed: {name}'
     OmegaConf.save(config, output/'resolved_config.yaml', resolve=True)
     versions = {}
-    for package in ('torch','transformers','vllm','ray','tensordict','flash-attn','swanlab','scienceworld','appworld','alfworld'):
+    for package in ('torch','triton','transformers','vllm','ray','tensordict','flash-attn','swanlab','scienceworld','appworld','alfworld'):
         try:
             versions[package] = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
             versions[package] = None
     provenance = {'python':sys.version, 'executable':sys.executable, 'verl_file':str(actual), 'packages':versions,
                   'cuda_visible_devices':os.environ.get('CUDA_VISIBLE_DEVICES'), 'job_id':os.environ.get('SLURM_JOB_ID')}
+    provenance['compiler_cache'] = {
+        'root': os.environ.get('GIGPO_COMPILER_CACHE_ROOT'),
+        'driver_torchinductor': os.environ.get('TORCHINDUCTOR_CACHE_DIR'),
+        'driver_triton': os.environ.get('TRITON_CACHE_DIR'),
+        'worker_policy': 'separate Ray actor directories, configured before process startup',
+        'worker_records': 'compiler_cache_workers/*.json',
+        'placement': 'node-local directory outside scratch symlink; single-node recipe',
+    }
     if os.environ['GIGPO_ENV'] == 'scienceworld':
         import scienceworld
         provenance['scienceworld_files'] = {str(p): sha(p) for p in Path(scienceworld.__file__).parent.rglob('*.jar')}
@@ -76,7 +84,7 @@ def record_provenance(config):
                 'reference_schedule_epochs':config.trainer.total_epochs, 'formal_holdout_details_saved':False}
     (output/'RUN_MANIFEST.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     snapshot = output/'implementation_snapshot'
-    for name in ('gigpo/core_gigpo.py','agent_system/environments/env_manager.py','agent_system/environments/env_package/sciworld/envs.py','agent_system/multi_turn_rollout/rollout_loop.py','verl/trainer/ppo/ray_trainer.py','experiments/gigpo_diag/diagnostics.py','experiments/gigpo_diag/SOURCE.json','experiments/gigpo_diag/CONFIG_DIFF.md'):
+    for name in ('gigpo/core_gigpo.py','agent_system/environments/env_manager.py','agent_system/environments/env_package/sciworld/envs.py','agent_system/multi_turn_rollout/rollout_loop.py','verl/trainer/ppo/ray_trainer.py','experiments/gigpo_diag/diagnostics.py','experiments/gigpo_diag/compiler_cache.py','experiments/gigpo_diag/common.sh','verl/single_controller/ray/base.py','experiments/gigpo_diag/runtime.py','experiments/gigpo_diag/SOURCE.json','experiments/gigpo_diag/CONFIG_DIFF.md'):
         dest=snapshot/name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root/name,dest)

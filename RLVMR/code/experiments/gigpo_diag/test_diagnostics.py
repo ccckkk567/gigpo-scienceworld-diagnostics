@@ -73,7 +73,12 @@ def test_science_parent_payload_and_worker_mapping():
         def send(self,message): self.payload=message[1]
         def recv(self):
             p=self.payload
-            return 'same',dict(task_id=p['task_id'],variation_id=p['variation_id'],reset_seed=p['reset_seed'],available_actions=[],possible_actions=[],score=0)
+            from experiments.gigpo_diag.diagnostics import digest
+            components = dict(observation='same', objects=[], possible_actions=[], score=0)
+            return 'same',dict(task_id=p['task_id'],task_num=p['task_id'],variation_id=p['variation_id'],
+                               reset_seed=p['reset_seed'],available_actions=[],possible_actions=[],score=0,
+                               task_description='task',simplifications_requested='easy',
+                               initial_state_components=components,initial_state_hash=digest(components))
     env=module.SciWorldMultiProcessEnv.__new__(module.SciWorldMultiProcessEnv)
     env.group_n=2; env.env_num=2; env.num_processes=4
     env.variations_idx=[[1,7],[2,5],[3,2]]; env._rng=np.random.RandomState(0); env._reset_count=0

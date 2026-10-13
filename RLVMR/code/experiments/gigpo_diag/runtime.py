@@ -76,7 +76,7 @@ def record_provenance(config):
                 'reference_schedule_epochs':config.trainer.total_epochs, 'formal_holdout_details_saved':False}
     (output/'RUN_MANIFEST.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     snapshot = output/'implementation_snapshot'
-    for name in ('gigpo/core_gigpo.py','agent_system/environments/env_manager.py','agent_system/multi_turn_rollout/rollout_loop.py','verl/trainer/ppo/ray_trainer.py','experiments/gigpo_diag/diagnostics.py','experiments/gigpo_diag/SOURCE.json','experiments/gigpo_diag/CONFIG_DIFF.md'):
+    for name in ('gigpo/core_gigpo.py','agent_system/environments/env_manager.py','agent_system/environments/env_package/sciworld/envs.py','agent_system/multi_turn_rollout/rollout_loop.py','verl/trainer/ppo/ray_trainer.py','experiments/gigpo_diag/diagnostics.py','experiments/gigpo_diag/SOURCE.json','experiments/gigpo_diag/CONFIG_DIFF.md'):
         dest=snapshot/name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root/name,dest)
@@ -94,7 +94,7 @@ def science_reset_check():
     try:
         for round_index in range(2):
             obs, infos=env.reset()
-            verify_groups({'anchor':obs}, infos, [0,0,1,1])
+            verify_groups({'anchor':obs}, infos, [0,0,1,1], environment='scienceworld')
             for i, info in enumerate(infos):
                 results.append({'reset_round':round_index,'group_slot':i//2,'worker_slot':i,
                                 'observation':obs[i],'info':plain(info)})
@@ -120,6 +120,8 @@ def science_reset_audit():
     (out/'assignments.json').write_text(json.dumps(assignments,indent=2),encoding='utf-8')
     result={'training_updates':0,'policy_rollouts':0,'groups':16,'group_size':8,
             'purpose':'first native training reset audit only',
+            'guard_basis':'task/variation/reset identity and recorded non-text evidence; raw observation is diagnostic',
+            'full_hidden_state_verified':False,
             'scienceworld_version':importlib.metadata.version('scienceworld'),
             'code_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()}
     env=None

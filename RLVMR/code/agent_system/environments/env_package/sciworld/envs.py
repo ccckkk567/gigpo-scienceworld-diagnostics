@@ -166,7 +166,7 @@ class SciWorldMultiProcessEnv(gym.Env):
             self.prev_available_actions[i] = info['available_actions']
             self.prev_possible_actions[i] = info["possible_actions"]
         from experiments.gigpo_diag.diagnostics import verify_groups
-        verify_groups({'anchor': obs_list}, info_list, [i // self.group_n for i in range(self.num_processes)])
+        verify_groups({'anchor': obs_list}, info_list, [i // self.group_n for i in range(self.num_processes)], environment='scienceworld')
         return obs_list, info_list
 
     def sampler_state(self):

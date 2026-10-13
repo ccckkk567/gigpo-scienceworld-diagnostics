@@ -119,3 +119,48 @@ module (the reset itself is CPU/Java work), 32 CPUs, 192 GiB, and 20 minutes.
 It does not retry/resample assignments or change pool, reward, prompt or seeds.
 This is diagnosis, not a repair of an as-yet unidentified mismatch. Inspect its
 evidence before another full training submission. Existing failed run retained.
+
+
+## ScienceWorld 160656: correct the reset guard's comparison basis
+
+The 16x8 reset audit rejected group 10, inclined-plane-friction-named-surfaces/469,
+reset_seed=374217481. The user's raw evidence shows six workers (80,81,82,83,85,87)
+list tin then caesium planes, while two (84,86) reverse those two description lines.
+Task/variation/seed, objects, legal commands and native score=10 match. There are
+zero policy rollouts or updates in this audit. The old raw state hash includes
+observation text, so its mismatch is not independent evidence of a different world.
+
+ScienceWorld reset validation now compares task ID/number, variation, Python seed,
+simplifications, task description, score and the recorded non-observation state
+components. Missing evidence, inconsistent raw evidence hashes, or mismatches in
+these fields still abort, even if diagnostic logging is disabled or fails. This
+checks recorded evidence only; it does not certify full hidden-state determinism.
+Python reset_seed is not a Java RNG reset. Other environments retain their old
+exact-observation guard. Both the environment and native collector UID checks use
+the ScienceWorld rule; parent task sampling/distribution stays unchanged.
+
+Raw observations and legacy initial_state_hash are retained unchanged. Differences
+are written to group_reset_text_differences.pid-*.jsonl.gz, classified only as
+line_order_only or content_difference_unverified. The latter is also diagnostic,
+not silently certified equivalent. No text is canonicalized for the model or for
+GiGPO; native exact-anchor groups can remain separate (six versus two initially
+in this reported example). This is a general separation of reset identity from
+rendering, not a task-specific inclined-plane exception. Core advantage, prompt,
+parser, rewards, environment/JAR version and sampling seeds are not changed.
+
+Upstream references: RLVMR 7e22784 sends None and draws tasks independently inside
+workers; BEACON samples in the parent and repeats indices. Neither reset path has
+our raw-observation equality abort. Keep the prior parent-allocation repair.
+https://github.com/Tencent/digitalhuman/blob/7e22784db51070fd3ed9b03a23edfca59cb5e800/RLVMR/code/agent_system/environments/env_package/sciworld/envs.py
+https://github.com/ZJU-REAL/BEACON/blob/main/agent_system/environments/env_package/sciworld/envs.py
+
+Local regression fixtures use the user-reported observation pair; other fields
+are synthetic. They are not new HPC rollouts. Prior local Java reset captures can
+also be replayed through the guard without invoking the simulator. HPC training
+must still be retried on the existing prepared environment, with a new run ID.
+
+Validation for this correction: 23 local regression cases passed. Offline replay
+of two existing local Java capture files also passed: 16 groups / 32 reset
+records per file (64 records total), with zero new resets or policy rollouts.
+Capture SHA256: fdb550300d91c22e368204e1b1ef2b5451e87855bdc0bad1699375794186ca5b
+and bb66373dcb5bea3012b9b18558732ba27a95106544df7a1864fac79a954cba8e.

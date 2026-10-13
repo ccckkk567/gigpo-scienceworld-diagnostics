@@ -309,7 +309,7 @@ class TrajectoryCollector:
         is_done = np.zeros(batch_size, dtype=bool)
         traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
         if getattr(self, "_diag_is_train", True):
-            diag.verify_groups(obs, infos, uid_batch)
+            diag.verify_groups(obs, infos, uid_batch, environment=self.config.env.env_name)
         diag_ctx = diag.begin_rollout(obs, infos, uid_batch, traj_uid, getattr(self, "_diag_is_train", True), self.config)
         total_batch_list = [[] for _ in range(batch_size)]
         total_infos = [[] for _ in range(batch_size)]

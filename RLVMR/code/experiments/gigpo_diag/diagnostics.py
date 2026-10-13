@@ -123,37 +123,91 @@ def begin_rollout(obs, infos, uids, trajs, is_train, config):
     return {"episodes": episodes, "config": config, "prev_score": [i.get("score") for i in infos], "steps": [], "batch_id": batch_id}
 
 
-def verify_groups(obs, infos, uids):
-    """Training correctness guard; evidence logging never weakens rejection."""
+def _science_reset_basis(info):
+    """Compare reset identity and recorded non-text evidence, not a full world state.
+
+    The legacy initial_state_hash includes observation text. Keep that raw hash
+    for provenance, but do not treat it as a physical-state equality test.
+    """
+    fields = ("task_id", "task_num", "variation_id", "reset_seed",
+              "simplifications_requested", "task_description", "score")
+    missing = [key for key in fields if key not in info or info[key] is None]
+    components = info.get("initial_state_components")
+    if not isinstance(components, dict):
+        raise ValueError("Missing ScienceWorld reset evidence: initial_state_components")
+    missing += ["initial_state_components." + key for key in
+                ("observation", "objects", "possible_actions", "score")
+                if key not in components or components[key] is None]
+    if missing:
+        raise ValueError("Missing ScienceWorld reset evidence: " + ", ".join(missing))
+    if info.get("initial_state_hash") != digest(components):
+        raise ValueError("ScienceWorld raw reset evidence hash mismatch")
+    if components["score"] != info["score"]:
+        raise ValueError("ScienceWorld reset score evidence mismatch")
+    return {**{key: info[key] for key in fields},
+            "recorded_state": {key: value for key, value in components.items() if key != "observation"}}
+
+
+def verify_groups(obs, infos, uids, *, environment=None):
+    """Enforce reset consistency; raw ScienceWorld text differences are diagnostic.
+
+    This checks available reset evidence, not full hidden-state determinism.
+    Neither observations nor GiGPO's exact anchor clustering are modified.
+    """
     if not (len(obs['anchor']) == len(infos) == len(uids)):
         raise RuntimeError("Group reset cardinality mismatch; refusing advantage update")
+    science = environment in ("scienceworld", "sciworld")
     grouped = defaultdict(list)
     for i, uid in enumerate(uids):
-        state = {**identity(infos[i]), "anchor": obs["anchor"][i],
-                 "score": infos[i].get("score"), "state": infos[i].get("initial_state_hash")}
-        grouped[str(uid)].append((i, state, digest(state)))
-    failures = []
-    for uid, rows in grouped.items():
-        if len({row[2] for row in rows}) == 1:
-            continue
-        fields = [key for key in rows[0][1]
-                  if len({digest(row[1][key]) for row in rows}) != 1]
-        component_keys = set().union(*(infos[i].get('initial_state_components', {}).keys() for i, _, _ in rows))
+        raw = {**identity(infos[i]), "anchor": obs["anchor"][i],
+               "score": infos[i].get("score"), "state": infos[i].get("initial_state_hash")}
+        error = None
+        try:
+            basis = _science_reset_basis(infos[i]) if science else raw
+        except ValueError as exc:
+            basis, error = {}, str(exc)
+        grouped[str(uid)].append({"worker_slot": i, "guard_state": raw,
+                                 "guard_hash": digest(raw), "comparison_basis": basis,
+                                 "evidence_error": error, "reset_info": infos[i]})
+    failures, text_differences = [], []
+    for uid, workers in grouped.items():
+        keys = set().union(*(w['comparison_basis'].keys() for w in workers))
+        fields = [key for key in sorted(keys)
+                  if len({digest(w['comparison_basis'].get(key)) for w in workers}) != 1]
+        component_keys = set().union(*(w['reset_info'].get('initial_state_components', {}).keys() for w in workers))
         components = [key for key in sorted(component_keys)
-                      if len({digest(infos[i].get('initial_state_components', {}).get(key)) for i, _, _ in rows}) != 1]
-        failures.append({'group_uid': uid, 'differing_fields': fields,
-                         'differing_state_components': components,
-                         'workers': [{'worker_slot': i, 'guard_state': state, 'guard_hash': hashed,
-                                      'reset_info': infos[i]} for i, state, hashed in rows]})
+                      if len({digest(w['reset_info'].get('initial_state_components', {}).get(key)) for w in workers}) != 1]
+        if fields or any(w['evidence_error'] for w in workers):
+            failures.append({'group_uid': uid, 'differing_fields': fields,
+                             'differing_state_components': components, 'workers': workers})
+            continue
+        anchors = [w['guard_state']['anchor'] for w in workers]
+        if science and len({digest(anchor) for anchor in anchors}) > 1:
+            # Classify only: never sort/rewrite model inputs or advantage anchors.
+            same_lines = all(isinstance(anchor, str) for anchor in anchors) and len(
+                {digest(dict(Counter(anchor.splitlines()))) for anchor in anchors}) == 1
+            text_differences.append({'group_uid': uid, 'guard_result': 'reset_evidence_matches',
+                                     'observation_difference': 'line_order_only' if same_lines else 'content_difference_unverified',
+                                     'full_hidden_state_verified': False,
+                                     'anchor_variant_count': len({digest(anchor) for anchor in anchors}),
+                                     'workers': workers})
+    if text_differences:
+        summaries = [{k: v for k, v in row.items() if k != 'workers'} for row in text_differences]
+        print('GROUP_RESET_TEXT_DIFFERENCE ' + json.dumps(summaries, ensure_ascii=False), flush=True)
+        if enabled():
+            try:
+                write('group_reset_text_differences', text_differences)
+            except Exception as exc:
+                print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
     if failures:
-        summaries = [{k:v for k,v in row.items() if k != 'workers'} for row in failures]
+        summaries = [{k: v for k, v in row.items() if k != 'workers'} for row in failures]
         print('GROUP_RESET_MISMATCH ' + json.dumps(summaries, ensure_ascii=False), flush=True)
         if enabled():
             try:
                 write('group_guard_failures', failures)
             except Exception as exc:
                 print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
-        raise RuntimeError("Mixed task/variation/start in native collector uid; refusing advantage update; "
+        raise RuntimeError("Mixed or missing task/variation/reset evidence in native collector uid; refusing advantage update; "
                            "see GROUP_RESET_MISMATCH and group_guard_failures JSONL")
 
 

@@ -38,3 +38,22 @@ version: install xgrammar from the official v0.1.16 source commit
 inside the allocated prepare job; CMake parallelism is bounded to four workers.
 Source: https://github.com/mlc-ai/xgrammar/releases/tag/v0.1.16 . No alternate
 package version or no-deps workaround is used.
+
+## ScienceWorld prepare job 160512: missing package description
+
+The new HPC log confirms xgrammar 0.1.16 and FlashAttention 2.7.4.post1 were
+built and installed successfully. Editable installation of this project then
+failed while setup.py tried to read the absent RLVMR/code/README.md. Both
+setup.py and pyproject.toml expect that file; add a concise local package README.
+The pyproject also referenced an absent code/LICENSE file. Preserve the existing
+setup.py Apache-2.0 metadata declaration as inline text instead of a missing file
+reference. The repository's root LICENSE.txt and all source notices are untouched.
+Stop tracking the five upstream-generated verl.egg-info files (editable builds
+regenerate them), and ignore egg-info/build/dist directories so installation
+artifacts do not make the experiment checkout appear dirty.
+
+This is a packaging-only repair. No environment, model, task pool, reward, parser,
+training launcher or dependency version changes. The existing venv, compiled
+xgrammar/FlashAttention and cached dependencies are reused on the next prepare.
+Retry this project alone with experiments/gigpo_diag/submit.sh after pulling.
+Actual runtime and training remain unverified until new HPC logs are available.

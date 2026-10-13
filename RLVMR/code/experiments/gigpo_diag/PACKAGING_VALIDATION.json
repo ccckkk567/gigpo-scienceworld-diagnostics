@@ -1,0 +1,23 @@
+{
+  "incident_job": 160512,
+  "confirmed_hpc_progress": [
+    "xgrammar 0.1.16 built and installed",
+    "flash-attn 2.7.4.post1 built and installed"
+  ],
+  "failure": "setup.py reads absent RLVMR/code/README.md during editable build requirements hook",
+  "repair": [
+    "add package README used by setup.py and pyproject.toml",
+    "preserve existing Apache-2.0 metadata without nonexistent LICENSE file reference",
+    "stop tracking generated egg-info and ignore build artifacts"
+  ],
+  "local_validation": {
+    "command": "<clean temporary venv python> -I -m pip install --no-deps -e <repo>/RLVMR/code --disable-pip-version-check",
+    "build_isolation": true,
+    "platform": "Windows",
+    "editable_build_and_install_passed": true,
+    "installed_package": "verl==0.2.0.dev0",
+    "training_dependencies_installed": false
+  },
+  "hpc_runtime_validated_after_fix": false,
+  "actual_training_updates_verified": 0
+}

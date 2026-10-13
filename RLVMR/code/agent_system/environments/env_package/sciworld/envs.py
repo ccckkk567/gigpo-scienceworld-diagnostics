@@ -60,7 +60,10 @@ def _worker(remote, seed, task_nums, simplifications_preset, env_step_limit, jar
                 valid_action_strs = f"Valid_actions: {valid_actions}, OBJ needs to be replaced with one of the following objects: {valid_objs}\n example: <action>focus on door</action>"
                 info['available_actions'] = valid_action_strs
                 info['observation_text'] = observation
-                info["possible_actions"] = env.get_valid_action_object_combinations()
+                # One native action enumeration, as before. The JSON API also
+                # exposes object IDs; a second enumeration would draw new aliases.
+                action_records = env.get_valid_action_object_combinations_with_templates()
+                info["possible_actions"] = sorted(row["action"] for row in action_records)
                 info['won'] = False
                 info['task_num'] = task_num
                 info['task_id'] = taskName
@@ -70,7 +73,9 @@ def _worker(remote, seed, task_nums, simplifications_preset, env_step_limit, jar
                 from experiments.gigpo_diag.diagnostics import digest
                 info['initial_state_components'] = {'observation': observation, 'objects': valid_objs,
                                                     'possible_actions': sorted(info['possible_actions']),
+                                                    'possible_action_templates': action_records,
                                                     'score': info['score']}
+                info['reset_evidence_version'] = 2
                 info['initial_state_hash'] = digest(info['initial_state_components'])
                 info['simplifications_requested'] = simplification_str
                 info['initialization_semantics'] = 'Java task variation controls world; Python seed recorded separately'

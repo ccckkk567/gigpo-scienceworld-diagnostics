@@ -1,0 +1,609 @@
+{
+  "kind": "local_java_compatibility_validation_not_HPC_training",
+  "scienceworld": "1.2.3",
+  "jar_sha256": "f4e1fdce0cdabe1bab7128a7e78ea820210d9db3c28d7272bcbbc3f3a1c5f0d7",
+  "policy_rollouts": 0,
+  "training_updates": 0,
+  "enum_equivalence": [
+    {
+      "task": "inclined-plane-friction-named-surfaces",
+      "variation": 127,
+      "rendered_commands_equal": true,
+      "next_rng_draw_equal": true,
+      "num_moves": 0,
+      "example": {
+        "action": "open drawer",
+        "template_id": 0,
+        "obj_ids": [
+          17487
+        ],
+        "type_ids": [
+          26
+        ]
+      }
+    },
+    {
+      "task": "lifespan-longest-lived-then-shortest-lived",
+      "variation": 35,
+      "rendered_commands_equal": true,
+      "next_rng_draw_equal": true,
+      "num_moves": 0,
+      "example": {
+        "action": "open cupboard",
+        "template_id": 0,
+        "obj_ids": [
+          17487
+        ],
+        "type_ids": [
+          24
+        ]
+      }
+    },
+    {
+      "task": "test-conductivity",
+      "variation": 261,
+      "rendered_commands_equal": true,
+      "next_rng_draw_equal": true,
+      "num_moves": 0,
+      "example": {
+        "action": "open cupboard",
+        "template_id": 0,
+        "obj_ids": [
+          17484
+        ],
+        "type_ids": [
+          24
+        ]
+      }
+    }
+  ],
+  "validation_date": "2026-10-13",
+  "regression_tests_passed": 41,
+  "groups_checked": 32,
+  "resets_checked": 64,
+  "all_guards_passed": true,
+  "full_hidden_state_verified": false,
+  "raw_capture_file": "C:\\Users\\19096\\Desktop\\verl-agent\\tmp\\gigpo_v4\\science_action_basis_live_raw.json",
+  "raw_capture_sha256": "8fa9b3ba392cbb506aff6480480d14573bd3ac633ec8be7ccf5bbdbc8aa5bc44",
+  "raw_capture_bytes": 9671956,
+  "validation_script_sha256": "78421f756e802eb66c00f7e670b49b39cac4c1363d77d071161b9ba183834360",
+  "hpc_new_training_run": false,
+  "groups": [
+    {
+      "batch": 0,
+      "group": 0,
+      "task": "find-plant",
+      "variation": 39,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "98156cec5b91aa613484e57d053c8cf5c8fe7f2f1f0b7bd56e0a51404d78ce22",
+        "9ef4e817379a73f5edab1e3eee17bbcec64592622b63dd8e54d36fd4ae2da3d0"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 1,
+      "task": "test-conductivity-of-unknown-substances",
+      "variation": 63,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "337402ec2d1b3af3c787fe87aa2e56810564f6b890de7850d5d083357ec76dac",
+        "ca6124d1b62d5620d26569080644394d77e4913e6e7b784951062ab055948194"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 2,
+      "task": "inclined-plane-friction-named-surfaces",
+      "variation": 603,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "5016c1f615cdfa09a86513ab946362974e490d9e1d406e850117526f24588e4b",
+        "476c8817154cee89f2c784a3b5515454da5c1e9265e41e5d6e18ce183d48434f"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 3,
+      "task": "mendelian-genetics-unknown-plant",
+      "variation": 165,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "cb89c49e88741d67aefc1d925d64226ea6a8afbab762cafde75ae1f7d6fcc366",
+        "fba9e381683088172e34609fa3cc6f5f0c1d22a5f4d18172a9c48b90d0247252"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 4,
+      "task": "find-animal",
+      "variation": 107,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "e3a77338abd1b5c18866cd7d4ee5ab75b3eb416f2716d326bead0cec4b80f709",
+        "2817379efbf88f365fc966f1a6823d2eca546a49f542bf64410db81b277b9acb"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 5,
+      "task": "find-animal",
+      "variation": 100,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "73626fb8c9e72106aed1676526c0ce97cbfd5c3fec98a60b21b1164e986d9689",
+        "3330d347cbe2f9b34ced38f0f0d89f2d4469a834f1b660a4911693c3acaf6cbc"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 6,
+      "task": "inclined-plane-friction-named-surfaces",
+      "variation": 107,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "a96357dfd0fface7b9a8b26b4fa885e26a9ea0441323bf9a72d08ddb8862e4d3",
+        "4364e4d8d7cb73228d9ccfea84526a7141a26719ae2e7047b167fd1a2124d199"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 7,
+      "task": "find-non-living-thing",
+      "variation": 125,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "bfbd50f81e874a5e8d86153e23559fda2eb9a81a21b4481070079b1182c3a7d3",
+        "02e1a9e3ad8106acc07fcc6475c432a946b5e2bd337d293d7fbdfc4567335676"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 8,
+      "task": "power-component-renewable-vs-nonrenewable-energy",
+      "variation": 4,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "e14638f2d095a45fd01a797d8be72207d7f899f533b5d2734625f9997f9e94a0",
+        "a2146be7fcf83f3be41caee8fb8140da74f31e6e66665b644ec02b72a6f375e2"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 9,
+      "task": "inclined-plane-friction-named-surfaces",
+      "variation": 216,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "7ce7b8b02d95002be73780a413ae7de632ec30c8cec4f7abf5645c450aa02cc8",
+        "62f029423678b8cb21e330c593bdb8237f1e78b4dee4cf1d9747799c19258c0e"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 10,
+      "task": "inclined-plane-friction-named-surfaces",
+      "variation": 469,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "703f83599c3fa6aea55bccf0934f0900e753fcf91a3fca4d5133b2e62aef320b",
+        "6fd5705dae566f358a47c5b7b113d9eb3d4e70fe94498c5a3a4724482088acaf"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 11,
+      "task": "test-conductivity-of-unknown-substances",
+      "variation": 130,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "24f9a94f1c983462bc3ce24447f4de9642eda8c9ba90a421352866e143e574f3",
+        "736de268cfea10cdb68c0820b5c17c9dc607f0aee07c841ae93e84d2c452b5cf"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 12,
+      "task": "mendelian-genetics-unknown-plant",
+      "variation": 39,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "298487fcc800f8842d16f91a651150a0530292d4079ea73a054cdabee2f250ac",
+        "64ad9907258e95e053616d4144925c3a2c8787914ec2a8eba4579cdeebe8b39c"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 13,
+      "task": "test-conductivity-of-unknown-substances",
+      "variation": 116,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "9d1551280bc0e8a7562cec35df9e6f66049ac912717222a86034182a84052dad",
+        "24595ac852f8975619a89f365e35f9145f1660098dca35892c883f44139e472e"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 14,
+      "task": "measure-melting-point-unknown-substance",
+      "variation": 101,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "7bc43ba2bfe398b27be867ad457c716ff9a8c812f4e17286e46488d8f220ed6f",
+        "0aa3fa56ecb5e3ff4bd068b7a2526faa151a6cbb87058a0c231df66d546bec32"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 0,
+      "group": 15,
+      "task": "test-conductivity",
+      "variation": 341,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "3e37e8c779fdde03c096d6c4ec2c6e746d0cef5893d80d1a0d7377b1da101354",
+        "7e47fdb568e773bc2efd87712bb3865fb77b82263d096342167496610b384277"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 0,
+      "task": "inclined-plane-friction-named-surfaces",
+      "variation": 321,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "ebfce6f190babfbabff6d3fa0bc292c822fa15793737756236cb05324ba8dc82",
+        "b8b9a09219daad3befa86d1ec3c227ba14c547ca1db28eda34343a03270bc129"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 1,
+      "task": "inclined-plane-friction-named-surfaces",
+      "variation": 127,
+      "rendered_actions_equal": false,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "2657e5b523d402947ef7cded1142acf4a1dcaedbddcd81c5b413144565b5813d",
+        "6846cf4ebb3d9ea8e4b1cbfd26284bc561302e37e40a03a7a36f3565110055e6"
+      ],
+      "alias_examples": [
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17466
+          ],
+          "type_ids": [
+            209
+          ],
+          "aliases": [
+            "look at paint on cup containing red paint",
+            "look at red paint in cup"
+          ]
+        },
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17469
+          ],
+          "type_ids": [
+            201
+          ],
+          "aliases": [
+            "look at paint on cup containing blue paint",
+            "look at blue paint in cup"
+          ]
+        },
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17472
+          ],
+          "type_ids": [
+            214
+          ],
+          "aliases": [
+            "look at yellow paint in wood cup containing yellow paint",
+            "look at yellow paint in cup containing yellow paint"
+          ]
+        }
+      ]
+    },
+    {
+      "batch": 1,
+      "group": 2,
+      "task": "test-conductivity-of-unknown-substances",
+      "variation": 149,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "cee811e5a1d54294803b368f0539888413c79a0d9a709c6498038047b8aa4fa5",
+        "1db1525f1ac7db13d2831764b8054ed17f17e46e4e9ebc4953c37407ec569298"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 3,
+      "task": "grow-plant",
+      "variation": 31,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "ee679689830a259bae722fa09a63f6e4d067cb2fedbbc260a48ed7918b141cc4",
+        "bc7b0df3c90b25c21de196e2cfa73c63fe1e85909058ddf717b23fedab483316"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 4,
+      "task": "measure-melting-point-known-substance",
+      "variation": 201,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "39a4a7f860e3d10480b9cecb2281b599bdc58797ee17dfcc64c74cda9e1afe29",
+        "9f3c515d5efbf04b6cf63dcf040959dfb0b0c234044c416ab3822b046cd45033"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 5,
+      "task": "inclined-plane-friction-named-surfaces",
+      "variation": 388,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "ab60214d032fbbb1d78f75afcefa00a7bf18da04388ebdf86b2270cac89f78cd",
+        "b75dea730b83f714779403e7487cc1472a7fd883873a91b5fc7dac9817bf4212"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 6,
+      "task": "mendelian-genetics-unknown-plant",
+      "variation": 69,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "911afce64ec09cf76ced489567ce873fe39d2134878ec564d67245ac41862078",
+        "cde19f681db397f624d11204f30da9df13108a632ae3626348737f9a1628f730"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 7,
+      "task": "find-animal",
+      "variation": 13,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "0066eaf70c2041d3cbeaa98916238b8569ad6785d21b51a8abbbf6a01229ac19",
+        "790656198012e460726c2d4dc81562b2ad93bd4bda476ff9411cc6a2ab21d789"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 8,
+      "task": "find-animal",
+      "variation": 3,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "1cdeec192872ac1fbf14cb3d91f0dcd0fd44a2baf0a743c10c24380e3d92a4b2",
+        "bd5da62b92c3bbede73af2ea1efaa3247f1a13234d3c11344d1a4a793fcc55a4"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 9,
+      "task": "test-conductivity",
+      "variation": 328,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "06920f9a2517afa24b235d1bf794fa3a5035d389c2b0468a8dc1b458caa5ce93",
+        "1d50684638d3539942d588f6606f39517e629f7b8a5768a0407f00b6e08f024c"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 10,
+      "task": "mendelian-genetics-unknown-plant",
+      "variation": 134,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "3f9d5c36a9d6cf54c7d31b80a0638b30b4cdfad27509314f40836b8db9022fa5",
+        "1ddc97edea65bd358442712e16c4438fd90372e33793ed822127c04105ed9c60"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 11,
+      "task": "lifespan-longest-lived-then-shortest-lived",
+      "variation": 35,
+      "rendered_actions_equal": false,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "5d8f95335262e8123fa9195cc1e2ea566c3925d3d0a1763cfcbdb8f31dc1e19c",
+        "a227d85c26cfb6c433e4c6ee183bbc3305e49633b22742aa610141bc8b3024ff"
+      ],
+      "alias_examples": [
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17469
+          ],
+          "type_ids": [
+            209
+          ],
+          "aliases": [
+            "look at red paint on cup containing red paint",
+            "look at paint on cup containing red paint"
+          ]
+        },
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17472
+          ],
+          "type_ids": [
+            201
+          ],
+          "aliases": [
+            "look at paint on cup containing blue paint",
+            "look at blue paint on cup containing blue paint"
+          ]
+        },
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17475
+          ],
+          "type_ids": [
+            214
+          ],
+          "aliases": [
+            "look at paint on wood cup",
+            "look at yellow paint on wood cup"
+          ]
+        }
+      ]
+    },
+    {
+      "batch": 1,
+      "group": 12,
+      "task": "test-conductivity",
+      "variation": 29,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "f77d0f496c5f7c2bb69c0d3c96df9d51542271b1eedd6924fbac9418adbd43b5",
+        "84e9d30c81bf3fdd50522647efcc855b15eece1c37dc129e30c994243e5cb8fc"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 13,
+      "task": "find-plant",
+      "variation": 119,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "182e13cf03c6739c12850d40fa687979a54624d1ddaf83a5b8f1746774f3bcfe",
+        "40247e18d0a98a22d7b167ac46ab84f1c0ffe46e9b04e800e2d9de0cf6e3b8ff"
+      ],
+      "alias_examples": []
+    },
+    {
+      "batch": 1,
+      "group": 14,
+      "task": "test-conductivity",
+      "variation": 261,
+      "rendered_actions_equal": false,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "2ff0d19085647e96f6d752ad7a7ac8ee6f40208c65ab0693496e1a5a155a4a1f",
+        "f1bfdeb9e4b034d50d832518f5584be8dd1bcc7f2ea8adc0100e131319fa10e7"
+      ],
+      "alias_examples": [
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17466
+          ],
+          "type_ids": [
+            209
+          ],
+          "aliases": [
+            "look at paint on wood cup containing red paint",
+            "look at red paint on wood cup"
+          ]
+        },
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17469
+          ],
+          "type_ids": [
+            201
+          ],
+          "aliases": [
+            "look at paint on cup containing blue paint",
+            "look at blue paint"
+          ]
+        },
+        {
+          "template_id": 4,
+          "obj_ids": [
+            17472
+          ],
+          "type_ids": [
+            214
+          ],
+          "aliases": [
+            "look at yellow paint on wood cup",
+            "look at yellow paint on cup containing yellow paint"
+          ]
+        }
+      ]
+    },
+    {
+      "batch": 1,
+      "group": 15,
+      "task": "test-conductivity",
+      "variation": 228,
+      "rendered_actions_equal": true,
+      "guard_passed": true,
+      "raw_worker_hashes": [
+        "fd2c002c5341ad9e07476812e2ec15b6a69829a6add76f7af19c5c8360c601eb",
+        "cb65590dd4e6aeceab1326d25518fe1a189d78c1194dfea9eb76634504100e6f"
+      ],
+      "alias_examples": []
+    }
+  ]
+}

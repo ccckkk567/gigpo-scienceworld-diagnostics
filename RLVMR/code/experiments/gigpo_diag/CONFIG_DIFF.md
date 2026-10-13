@@ -164,3 +164,57 @@ of two existing local Java capture files also passed: 16 groups / 32 reset
 records per file (64 records total), with zero new resets or policy rollouts.
 Capture SHA256: fdb550300d91c22e368204e1b1ef2b5451e87855bdc0bad1699375794186ca5b
 and bb66373dcb5bea3012b9b18558732ba27a95106544df7a1864fac79a954cba8e.
+
+
+## ScienceWorld 160694: action aliases are not structural action identities
+
+HPC 160694 (4acf730) completed initial reference validation and one native actor
+update. The second batch reset guard then rejected groups 1, 11 and 14 because
+observation and sorted possible_actions text differed. SwanLab 0.10.2 was online;
+this was not a tracker failure. The user's returned action-list excerpt contains
+different paint referents. It is only the tail of the output, not all three raw
+HPC groups; do not claim the old run contains structural action-ID evidence.
+
+The bundled upstream Scala InputParser.chooseUniqueReferents randomly chooses
+referents after repeated collisions (attempts >=10). Sorting action strings does
+not remove this variation. Repeated reads in a single unchanged local 1.2.3 world
+reproduce different text with identical (template_id, ordered obj_ids, type_ids).
+PythonInterface.doLoad resets object UUID allocation; local repeated loads also
+confirm the IDs match for the same sampled task/variation. This is evidence about
+the exposed reset state and available action structure, not full hidden state.
+
+New reset_evidence_version=2 uses the existing native JSON action enumeration,
+get_valid_action_object_combinations_with_templates(), once IN PLACE OF the old
+string enumeration. The two APIs use the same native action generator. Sorted
+action strings from that one result still feed the existing possible_actions
+field; raw JSON records are retained as possible_action_templates. No additional
+enumeration, Java reseeding, simulator/JAR changes or action execution is added.
+Step-time enumeration, prompts, parser, rewards, task pool, grouping/seed draws,
+GiGPO exact observation anchors and update logic are unchanged.
+
+The guard compares template ID and ordered object/type IDs, retaining duplicate
+actions. It still validates task identity, variation, reset_seed, simplifications,
+task description, objects, native score, raw evidence hash and agreement between
+recorded action strings and JSON records. Missing or inconsistent v2 evidence
+aborts. Historical v1 records keep the old string-based comparison; no invented
+object IDs or retrospective equivalence claims. Successful structure matches
+with different names are saved to group_reset_action_text_differences JSONL;
+observations retain their prior separate diagnostic. No model input is rewritten.
+
+Validation: 41 local regression tests pass (including core diagnostic invariance,
+real mismatch rejection, argument order, multiplicity and missing evidence).
+Two persistent local Java instances followed seed-0 train assignments for the
+first two batches: 32 groups, 64 resets, all guards passed. Second-batch groups
+1/11/14 reproduced alias differences: inclined-plane-friction-named-surfaces/127,
+lifespan-longest-lived-then-shortest-lived/35, test-conductivity/261. On those three
+cases, under the same test-only Scala RNG seed, old/new enumeration APIs returned
+equal sorted commands and equal next RNG draws. Production never applies this
+test seed. Raw capture hashes and bounded alias examples are stored in
+SCIENCE_ACTION_BASIS_VALIDATION.json. These are compatibility checks with zero
+policy rollouts/updates, not a new HPC training result. The 128-worker HPC rerun
+and further optimizer updates remain unverified until the user executes them.
+
+Reference source at the recipe's locked upstream commit:
+https://github.com/Tencent/digitalhuman/blob/7e22784db51070fd3ed9b03a23edfca59cb5e800/RLVMR/code/agent_system/environments/env_package/sciworld/ScienceWorld/simulator/src/main/scala/scienceworld/input/InputParser.scala
+Action.toTemplate preserves ordered UUID/type arguments; AgentInterface exposes
+both text and JSON from mkPossibleActions in the same source tree.

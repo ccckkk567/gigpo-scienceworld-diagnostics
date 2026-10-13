@@ -123,11 +123,34 @@ def begin_rollout(obs, infos, uids, trajs, is_train, config):
     return {"episodes": episodes, "config": config, "prev_score": [i.get("score") for i in infos], "steps": [], "batch_id": batch_id}
 
 
-def _science_reset_basis(info):
-    """Compare reset identity and recorded non-text evidence, not a full world state.
+def _science_action_structure(components):
+    """Keep action multiplicity/argument order; omit randomly selected aliases."""
+    rows = components.get('possible_action_templates')
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("Missing ScienceWorld structured action evidence")
+    structure, actions = [], []
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('action'), str):
+            raise ValueError("Invalid ScienceWorld action record")
+        if type(row.get('template_id')) is not int:
+            raise ValueError("Invalid ScienceWorld action template ID")
+        for key in ('obj_ids', 'type_ids'):
+            if not isinstance(row.get(key), list) or any(type(v) is not int for v in row[key]):
+                raise ValueError("Invalid ScienceWorld action " + key)
+        if len(row['obj_ids']) != len(row['type_ids']):
+            raise ValueError("Inconsistent ScienceWorld object/type IDs")
+        actions.append(row['action'])
+        structure.append((row['template_id'], tuple(row['obj_ids']), tuple(row['type_ids'])))
+    if sorted(actions) != components['possible_actions']:
+        raise ValueError("ScienceWorld action text/template evidence mismatch")
+    return sorted(structure)
 
-    The legacy initial_state_hash includes observation text. Keep that raw hash
-    for provenance, but do not treat it as a physical-state equality test.
+
+def _science_reset_basis(info):
+    """Compare reset identity, objects, score and structural action evidence.
+
+    Raw observation/command aliases stay in the evidence hash. This is not a
+    full hidden-world equality test. Historical v1 records keep their old rule.
     """
     fields = ("task_id", "task_num", "variation_id", "reset_seed",
               "simplifications_requested", "task_description", "score")
@@ -144,8 +167,19 @@ def _science_reset_basis(info):
         raise ValueError("ScienceWorld raw reset evidence hash mismatch")
     if components["score"] != info["score"]:
         raise ValueError("ScienceWorld reset score evidence mismatch")
-    return {**{key: info[key] for key in fields},
-            "recorded_state": {key: value for key, value in components.items() if key != "observation"}}
+    version = info.get('reset_evidence_version', 1)
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("Unsupported ScienceWorld reset evidence version")
+    state = {key: value for key, value in components.items() if key != "observation"}
+    if version == 2:
+        structure = _science_action_structure(components)
+        state.pop('possible_actions')
+        state.pop('possible_action_templates')
+        state['action_structure'] = structure
+    elif 'possible_action_templates' in components:
+        raise ValueError("ScienceWorld structured action evidence missing version 2")
+    return {**{key: info[key] for key in fields}, 'reset_evidence_version': version,
+            'recorded_state': state}
 
 
 def verify_groups(obs, infos, uids, *, environment=None):
@@ -169,7 +203,7 @@ def verify_groups(obs, infos, uids, *, environment=None):
         grouped[str(uid)].append({"worker_slot": i, "guard_state": raw,
                                  "guard_hash": digest(raw), "comparison_basis": basis,
                                  "evidence_error": error, "reset_info": infos[i]})
-    failures, text_differences = [], []
+    failures, text_differences, action_differences = [], [], []
     for uid, workers in grouped.items():
         keys = set().union(*(w['comparison_basis'].keys() for w in workers))
         fields = [key for key in sorted(keys)
@@ -181,6 +215,13 @@ def verify_groups(obs, infos, uids, *, environment=None):
             failures.append({'group_uid': uid, 'differing_fields': fields,
                              'differing_state_components': components, 'workers': workers})
             continue
+        if science and 'possible_actions' in components:
+            action_differences.append({
+                'group_uid': uid, 'guard_result': 'reset_evidence_matches',
+                'action_difference': 'rendered_commands_differ_structure_matches',
+                'full_hidden_state_verified': False,
+                'action_variant_count': len({digest(w['reset_info']['initial_state_components']['possible_actions']) for w in workers}),
+                'workers': workers})
         anchors = [w['guard_state']['anchor'] for w in workers]
         if science and len({digest(anchor) for anchor in anchors}) > 1:
             # Classify only: never sort/rewrite model inputs or advantage anchors.
@@ -197,6 +238,14 @@ def verify_groups(obs, infos, uids, *, environment=None):
         if enabled():
             try:
                 write('group_reset_text_differences', text_differences)
+            except Exception as exc:
+                print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
+    if action_differences:
+        summaries = [{k: v for k, v in row.items() if k != 'workers'} for row in action_differences]
+        print('GROUP_RESET_ACTION_TEXT_DIFFERENCE ' + json.dumps(summaries, ensure_ascii=False), flush=True)
+        if enabled():
+            try:
+                write('group_reset_action_text_differences', action_differences)
             except Exception as exc:
                 print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
     if failures:

@@ -1,0 +1,42 @@
+{
+  "kind": "focused_local_simulator_regression_not_HPC_training",
+  "scienceworld": "1.2.3",
+  "jar_sha256": "f4e1fdce0cdabe1bab7128a7e78ea820210d9db3c28d7272bcbbc3f3a1c5f0d7",
+  "task": "mendelian-genetics-unknown-plant",
+  "task_num": 24,
+  "variation_id": 141,
+  "reset_seed": 1562125877,
+  "actual_worker_reset_branch": true,
+  "java_processes": 2,
+  "process_mode": "sequential: four repeated resets per process",
+  "resets": 8,
+  "guard_passed": true,
+  "raw_policy_inputs_unchanged": true,
+  "object_name_variants": 7,
+  "object_identity_variants": 1,
+  "action_structure_variants": 1,
+  "raw_capture_sha256": "241d7f8670eb2a1b5b91bf2f5f0cb928a8223bbf1209a7b57da118efe4cee438",
+  "policy_rollouts": 0,
+  "training_updates": 0,
+  "limitation": "Focused local reset compatibility only; no 128-worker HPC rollout or hidden-state determinism proof.",
+  "object_getter_equivalence": {
+    "raw_capture_sha256": "6412594251221c668e42d0ba404322d50b76029a4c69d8e411a871a9681312cf",
+    "test_only_scala_seeds": [
+      0,
+      1,
+      12345
+    ],
+    "ordered_names_equal": true,
+    "next_rng_draw_equal": true,
+    "production_scala_reseeding": false
+  },
+  "regression_tests": {
+    "passed": 59,
+    "files": [
+      "test_science_object_basis.py",
+      "test_science_action_basis.py",
+      "test_science_reset_basis.py",
+      "test_diagnostics.py"
+    ]
+  }
+}

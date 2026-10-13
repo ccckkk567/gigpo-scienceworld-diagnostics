@@ -97,7 +97,9 @@ def test_science_parent_payload_and_worker_mapping():
         def reset(self): return 'state',{'score':0}
         def get_task_description(self): return 'task'
         def get_possible_actions(self): return []
-        def get_possible_objects(self): return []
+        def get_possible_objects(self): raise AssertionError('reset must enumerate objects once via typed LUT')
+        def get_possible_object_referent_types_LUT(self):
+            return {'1': {'10': 'agent', 'desc': 'Agent'}}
         def get_valid_action_object_combinations(self): raise AssertionError('reset must enumerate once via JSON')
         def get_valid_action_object_combinations_with_templates(self):
             return [dict(action='look around', template_id=0, obj_ids=[], type_ids=[])]
@@ -113,7 +115,8 @@ def test_science_parent_payload_and_worker_mapping():
     assert Sim.loaded==[('two',5,'easy')]
     assert p.results[0][1]['task_id']=='two' and p.results[0][1]['variation_id']==5
     assert p.results[0][1]['possible_actions'] == ['look around']
-    assert p.results[0][1]['reset_evidence_version'] == 2
+    assert p.results[0][1]['reset_evidence_version'] == 3
+    assert p.results[0][1]['initial_state_components']['objects'] == ['agent']
     from experiments.gigpo_diag.diagnostics import verify_groups
     verify_groups({'anchor':['state']}, [p.results[0][1]], [0], environment='scienceworld')
 

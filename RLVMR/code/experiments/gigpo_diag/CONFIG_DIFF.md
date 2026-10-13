@@ -259,3 +259,41 @@ Primary source for supported cache environment variables and launcher loading:
 https://github.com/pytorch/pytorch/blob/v2.6.0/torch/_inductor/runtime/cache_dir_utils.py
 https://github.com/triton-lang/triton/blob/v3.2.0/python/triton/runtime/cache.py
 https://github.com/triton-lang/triton/blob/v3.2.0/third_party/nvidia/backend/driver.py
+
+
+## ScienceWorld 160878: object aliases must not abort a matching reset
+
+Run 160878 completed initial evaluation and two optimizer updates before the
+third training reset rejected group 5: mendelian-genetics-unknown-plant / 141,
+reset_seed 1562125877. The user's bounded comparison showed equal action
+structure across all eight workers, but different book referent strings.
+The added object-string equality guard was too strict for ScienceWorld's native
+random alias selection. This was a diagnostic guard failure, not evidence that
+GiGPO's advantage calculation or the simulator task had failed.
+
+Reset evidence v3 replaces one get_possible_objects call with one native
+get_possible_object_referent_types_LUT call. Both APIs enumerate the same native
+referents once. Sorting the returned aliases in Java UTF-16 order preserves the
+original object-list input, including duplicate names. No additional enumeration
+or production Java reseeding is introduced. Step-time behavior is unchanged.
+
+The reset guard compares sorted object UUID/type pairs and retains the existing
+task, variation, seed, score and action-structure checks. Raw aliases and their
+identity mapping stay in the evidence hash. Matching identities with different
+names are recorded in group_reset_object_text_differences, without aborting.
+Historical v1/v2 records retain their old comparison rules because they lack the
+new object evidence. This does not certify full hidden-world equality. Prompts,
+native observation anchors, rewards, task sampling and GiGPO updates are unchanged.
+
+Validation is deliberately bounded to this failure and existing regressions:
+59 tests passed. The actual worker reset branch ran the reported task eight times
+in two local ScienceWorld 1.2.3 Java processes (four resets each, sequential).
+It produced seven object-name variants, one object-identity structure and one
+action structure; all passed the guard without mutating raw inputs. A separate
+same-world API comparison at three test-only Scala seeds returned equal ordered
+names and equal next RNG draws. See SCIENCE_OBJECT_BASIS_VALIDATION.json for
+capture hashes and scope. No GPU policy rollout or HPC optimizer update was run.
+
+HPC full job 160883 was RUNNING when this patch was prepared. Do not pull into
+its active checkout; apply this patch after it exits, or use an independent
+checkout for a later job. No environment preparation rerun is needed.

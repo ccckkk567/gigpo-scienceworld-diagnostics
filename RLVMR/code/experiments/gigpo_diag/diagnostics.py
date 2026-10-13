@@ -123,6 +123,33 @@ def begin_rollout(obs, infos, uids, trajs, is_train, config):
     return {"episodes": episodes, "config": config, "prev_score": [i.get("score") for i in infos], "steps": [], "batch_id": batch_id}
 
 
+def science_object_evidence(records):
+    """Read the native visible-object ID/type/alias mapping without world calls."""
+    if not isinstance(records, dict) or not records:
+        raise ValueError("Missing ScienceWorld object identity evidence")
+    aliases, structure, seen = [], [], set()
+    def numeric_key(value):
+        if not isinstance(value, str) or not value.isdecimal() or str(int(value)) != value:
+            raise ValueError("Invalid ScienceWorld object/type ID")
+        return int(value)
+    for type_key, objects in records.items():
+        type_id = numeric_key(type_key)
+        if not isinstance(objects, dict) or not isinstance(objects.get('desc'), str) or len(objects) < 2:
+            raise ValueError("Invalid ScienceWorld typed object group")
+        for object_key, alias in objects.items():
+            if object_key == 'desc':
+                continue
+            object_id = numeric_key(object_key)
+            if object_id in seen or not isinstance(alias, str) or not alias:
+                raise ValueError("Invalid or duplicate ScienceWorld object identity")
+            seen.add(object_id)
+            aliases.append(alias)
+            structure.append((object_id, type_id))
+    # Native getPossibleObjects sorts these same aliases by Java String order.
+    # Preserve duplicate names and UTF-16 ordering; do not canonicalize aliases.
+    return sorted(aliases, key=lambda s: s.encode('utf-16-be')), sorted(structure)
+
+
 def _science_action_structure(components):
     """Keep action multiplicity/argument order; omit randomly selected aliases."""
     rows = components.get('possible_action_templates')
@@ -149,8 +176,8 @@ def _science_action_structure(components):
 def _science_reset_basis(info):
     """Compare reset identity, objects, score and structural action evidence.
 
-    Raw observation/command aliases stay in the evidence hash. This is not a
-    full hidden-world equality test. Historical v1 records keep their old rule.
+    Raw observation/object/command aliases stay in the evidence hash. This is
+    not a full hidden-world equality test. Historical v1/v2 keep their old rules.
     """
     fields = ("task_id", "task_num", "variation_id", "reset_seed",
               "simplifications_requested", "task_description", "score")
@@ -168,16 +195,25 @@ def _science_reset_basis(info):
     if components["score"] != info["score"]:
         raise ValueError("ScienceWorld reset score evidence mismatch")
     version = info.get('reset_evidence_version', 1)
-    if type(version) is not int or version not in (1, 2):
+    if type(version) is not int or version not in (1, 2, 3):
         raise ValueError("Unsupported ScienceWorld reset evidence version")
     state = {key: value for key, value in components.items() if key != "observation"}
-    if version == 2:
+    if version >= 2:
         structure = _science_action_structure(components)
         state.pop('possible_actions')
         state.pop('possible_action_templates')
         state['action_structure'] = structure
     elif 'possible_action_templates' in components:
         raise ValueError("ScienceWorld structured action evidence missing version 2")
+    if version == 3:
+        aliases, objects = science_object_evidence(components.get('possible_object_referents'))
+        if aliases != components['objects']:
+            raise ValueError("ScienceWorld object text/identity evidence mismatch")
+        state.pop('objects')
+        state.pop('possible_object_referents')
+        state['object_structure'] = objects
+    elif 'possible_object_referents' in components:
+        raise ValueError("ScienceWorld object identity evidence missing version 3")
     return {**{key: info[key] for key in fields}, 'reset_evidence_version': version,
             'recorded_state': state}
 
@@ -203,7 +239,7 @@ def verify_groups(obs, infos, uids, *, environment=None):
         grouped[str(uid)].append({"worker_slot": i, "guard_state": raw,
                                  "guard_hash": digest(raw), "comparison_basis": basis,
                                  "evidence_error": error, "reset_info": infos[i]})
-    failures, text_differences, action_differences = [], [], []
+    failures, text_differences, action_differences, object_differences = [], [], [], []
     for uid, workers in grouped.items():
         keys = set().union(*(w['comparison_basis'].keys() for w in workers))
         fields = [key for key in sorted(keys)
@@ -215,6 +251,13 @@ def verify_groups(obs, infos, uids, *, environment=None):
             failures.append({'group_uid': uid, 'differing_fields': fields,
                              'differing_state_components': components, 'workers': workers})
             continue
+        if science and 'objects' in components:
+            object_differences.append({
+                'group_uid': uid, 'guard_result': 'reset_evidence_matches',
+                'object_difference': 'rendered_names_differ_identity_and_type_match',
+                'full_hidden_state_verified': False,
+                'object_variant_count': len({digest(w['reset_info']['initial_state_components']['objects']) for w in workers}),
+                'workers': workers})
         if science and 'possible_actions' in components:
             action_differences.append({
                 'group_uid': uid, 'guard_result': 'reset_evidence_matches',
@@ -246,6 +289,14 @@ def verify_groups(obs, infos, uids, *, environment=None):
         if enabled():
             try:
                 write('group_reset_action_text_differences', action_differences)
+            except Exception as exc:
+                print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
+    if object_differences:
+        summaries = [{k: v for k, v in row.items() if k != 'workers'} for row in object_differences]
+        print('GROUP_RESET_OBJECT_TEXT_DIFFERENCE ' + json.dumps(summaries, ensure_ascii=False), flush=True)
+        if enabled():
+            try:
+                write('group_reset_object_text_differences', object_differences)
             except Exception as exc:
                 print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
     if failures:

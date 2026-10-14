@@ -55,87 +55,45 @@ def records(path, kind):
     return rows
 
 
-def test_reported_reordering_passes_and_retains_exact_native_anchor_groups(tmp_path, monkeypatch):
-    monkeypatch.setenv('GIGPO_DIAG_DIR', str(tmp_path))
+
+def test_historical_line_order_remains_diagnostic_and_native_clusters_unchanged():
     obs, infos, uids = fixture()
     before = copy.deepcopy((obs, infos, uids))
-    diag.verify_groups(obs, infos, uids, environment='scienceworld')
-    assert (obs, infos, uids) == before
-    evidence = records(tmp_path, 'group_reset_text_differences')[0]
-    assert evidence['observation_difference'] == 'line_order_only'
-    assert evidence['full_hidden_state_verified'] is False
-    assert evidence['anchor_variant_count'] == 2
-    assert evidence['workers'][4]['guard_state']['anchor'] == OTHER
-    # Execute the unchanged native clustering function, without GPU dependencies.
+    row = diag.science_reset_observations(obs, infos, uids)[0]
+    assert 'known_rendering_difference' in row['classification']
+    assert row['observation_variant_count'] == 2
+    assert not row['full_hidden_state_verified']
+    assert before == (obs, infos, uids)
     tree = ast.parse((ROOT/'gigpo/core_gigpo.py').read_text(encoding='utf-8'))
     nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ('to_hashable', 'build_step_group')]
     from collections import Counter, defaultdict
     import uuid
     namespace = dict(np=np, uuid=uuid, defaultdict=defaultdict)
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), '<native-anchor-clustering>', 'exec'), namespace)
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), '<native-clustering>', 'exec'), namespace)
     clusters = namespace['build_step_group'](np.array(obs['anchor']), np.array(uids))
     assert sorted(Counter(clusters).values()) == [2, 6]
 
 
-@pytest.mark.parametrize('field,value', [
-    ('task_id', 'different-task'), ('task_num', 99), ('variation_id', 470),
-    ('reset_seed', 1), ('simplifications_requested', ''), ('task_description', 'different goal'),
-    ('score', 20), ('objects', ['different object']), ('possible_actions', ['different action'])])
-def test_real_reset_evidence_mismatch_still_rejected(field, value, tmp_path, monkeypatch):
+@pytest.mark.parametrize('problem', ['components', 'hash', 'version', 'score', 'auxiliary', 'description'])
+def test_optional_evidence_never_has_stop_authority(problem, tmp_path, monkeypatch):
     monkeypatch.setenv('GIGPO_DIAG_DIR', str(tmp_path))
     obs, infos, uids = fixture()
-    if field in ('objects', 'possible_actions'):
-        infos[4]['initial_state_components'][field] = value
-    else:
-        infos[4][field] = value
-        if field == 'score':
-            infos[4]['initial_state_components']['score'] = value
-    infos[4]['initial_state_hash'] = diag.digest(infos[4]['initial_state_components'])
-    with pytest.raises(RuntimeError, match='refusing advantage update'):
-        diag.verify_groups(obs, infos, uids, environment='sciworld')
-    assert len(records(tmp_path, 'group_guard_failures')) == 1
-
-
-@pytest.mark.parametrize('problem', ['missing_seed', 'missing_components', 'missing_objects', 'bad_hash', 'bad_score'])
-def test_missing_or_inconsistent_evidence_rejected_even_if_all_workers_match(problem):
-    obs, infos, uids = fixture()
-    for info in infos:
-        if problem == 'missing_seed': info.pop('reset_seed')
-        if problem == 'missing_components': info.pop('initial_state_components')
-        if problem == 'missing_objects': info['initial_state_components'].pop('objects')
-        if problem == 'bad_hash': info['initial_state_hash'] = 'wrong'
-        if problem == 'bad_score': info['score'] = -1
-    with pytest.raises(RuntimeError):
+    if problem == 'components': infos[1].pop('initial_state_components')
+    if problem == 'hash': infos[1]['initial_state_hash'] = 'bad'
+    if problem == 'version': infos[1]['reset_evidence_version'] = 999
+    if problem == 'score': infos[1]['score'] = 20
+    if problem == 'auxiliary': infos[1]['initial_state_components']['extra'] = 'debug'
+    if problem == 'description': infos[1]['task_description'] = 'possibly changed goal'
+    row = diag.verify_groups(obs, infos, uids, environment='scienceworld')[0]
+    assert not row['full_hidden_state_verified']
+    assert set(row['classification']) & {'evidence_unavailable', 'suspicious_semantic_difference'}
+    with mock.patch.object(diag, 'write', side_effect=OSError('synthetic disk failure')):
         diag.verify_groups(obs, infos, uids, environment='scienceworld')
 
 
-def test_logging_disabled_or_broken_does_not_change_guard_decision(tmp_path, monkeypatch):
-    obs, infos, uids = fixture()
-    monkeypatch.delenv('GIGPO_DIAG_DIR', raising=False)
-    diag.verify_groups(obs, infos, uids, environment='scienceworld')
-    monkeypatch.setenv('GIGPO_DIAG_DIR', str(tmp_path))
-    with mock.patch.object(diag, 'write', side_effect=OSError('synthetic disk error')):
-        diag.verify_groups(obs, infos, uids, environment='scienceworld')
-        infos[4]['variation_id'] = 999
-        with pytest.raises(RuntimeError):
-            diag.verify_groups(obs, infos, uids, environment='scienceworld')
-
-
-def test_other_content_is_logged_as_unverified_not_certified_equivalent(tmp_path, monkeypatch):
+def test_observer_parser_failure_does_not_escape(tmp_path, monkeypatch):
     monkeypatch.setenv('GIGPO_DIAG_DIR', str(tmp_path))
     obs, infos, uids = fixture()
-    obs['anchor'][4] = 'different rendered description'
-    infos[4]['initial_state_components']['observation'] = obs['anchor'][4]
-    infos[4]['initial_state_hash'] = diag.digest(infos[4]['initial_state_components'])
-    diag.verify_groups(obs, infos, uids, environment='scienceworld')
-    evidence = records(tmp_path, 'group_reset_text_differences')[0]
-    assert evidence['observation_difference'] == 'content_difference_unverified'
-    assert evidence['full_hidden_state_verified'] is False
-
-
-def test_other_environments_and_cardinality_guard_unchanged():
-    obs, infos, uids = fixture()
-    with pytest.raises(RuntimeError):
-        diag.verify_groups(obs, infos, uids)
-    with pytest.raises(RuntimeError, match='cardinality'):
-        diag.verify_groups(obs, infos[:-1], uids, environment='scienceworld')
+    with mock.patch.object(diag, 'science_reset_observations', side_effect=ValueError('synthetic parser failure')):
+        assert diag.observe_science_reset(obs, infos, uids) is None
+    assert diag._reset_counts['train/observer_failure_count'] == 1

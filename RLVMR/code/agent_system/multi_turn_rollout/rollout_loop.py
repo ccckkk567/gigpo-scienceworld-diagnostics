@@ -296,10 +296,13 @@ class TrajectoryCollector:
         batch_size = len(gen_batch.batch['input_ids'])
         batch_output = None
 
-        if self.config.env.rollout.n > 0: # env grouping
+        science = self.config.env.env_name in ('sciworld', 'scienceworld')
+        # Evaluation environments have group_n=1; training keeps the original K.
+        group_size = envs.envs.group_n if science else self.config.env.rollout.n
+        if group_size > 0: # env grouping
             uid_batch = []
             for i in range(batch_size):
-                if i % self.config.env.rollout.n == 0:
+                if i % group_size == 0:
                     uid = str(uuid.uuid4())
                 uid_batch.append(uid)
             uid_batch = np.array(uid_batch, dtype=object)
@@ -308,7 +311,13 @@ class TrajectoryCollector:
             uid_batch = np.array([uid for _ in range(len(gen_batch.batch))], dtype=object)
         is_done = np.zeros(batch_size, dtype=bool)
         traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
-        if getattr(self, "_diag_is_train", True):
+        if science:
+            from experiments.gigpo_diag.science_contract import validate_collector_binding
+            validate_collector_binding(envs.envs.expected_assignments,
+                                       [info.get('load_receipt') for info in infos],
+                                       uid_batch, traj_uid, group_size)
+            diag.observe_science_reset(obs, infos, uid_batch, getattr(self, "_diag_is_train", True))
+        elif getattr(self, "_diag_is_train", True):
             diag.verify_groups(obs, infos, uid_batch, environment=self.config.env.env_name)
         diag_ctx = diag.begin_rollout(obs, infos, uid_batch, traj_uid, getattr(self, "_diag_is_train", True), self.config)
         total_batch_list = [[] for _ in range(batch_size)]

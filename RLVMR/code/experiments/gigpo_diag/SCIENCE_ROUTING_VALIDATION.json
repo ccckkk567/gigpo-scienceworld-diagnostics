@@ -1,0 +1,221 @@
+{
+  "kind": "local_native_routing_smoke_not_HPC_training",
+  "scienceworld": "1.2.3",
+  "jar_sha256": "f4e1fdce0cdabe1bab7128a7e78ea820210d9db3c28d7272bcbbc3f3a1c5f0d7",
+  "base_commit": "81c6bfd98aa2baf59ec1365c76d504e100d98c10",
+  "java_processes": 2,
+  "reset_rounds": 2,
+  "reset_receipts": 4,
+  "native_steps": 4,
+  "policy_rollouts": 0,
+  "training_updates": 0,
+  "task_num": 24,
+  "variation_id": 141,
+  "parent_and_collector_contracts": "passed",
+  "native_input_preservation": "passed",
+  "world_equivalence": "unverified",
+  "raw_capture_sha256": "20627d47cae4b08782b1a14c8d50ef5ee2234d45e4b15974d3688a00f6f2cb4a",
+  "step_results": [
+    {
+      "rewards": [
+        0.0,
+        0.0
+      ],
+      "dones": [
+        false,
+        false
+      ],
+      "strict_success": [
+        false,
+        false
+      ]
+    },
+    {
+      "rewards": [
+        0.0,
+        0.0
+      ],
+      "dones": [
+        false,
+        false
+      ],
+      "strict_success": [
+        false,
+        false
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "group_uid": "live-0",
+      "worker_slots": [
+        0,
+        1
+      ],
+      "group_size": 2,
+      "classification": [],
+      "observation_variant_count": 1,
+      "policy_prompt_variant_count": 1,
+      "initial_score_min": 0,
+      "initial_score_max": 0,
+      "initial_score_known": 2,
+      "initial_score_unknown": 0,
+      "differing_components": [],
+      "needs_audit": [],
+      "evidence_errors": [],
+      "evidence_record_count": 2,
+      "structure_evidence_available": false,
+      "structure_difference_observed": null,
+      "alias_equivalence": null,
+      "initial_state_status": "unverified",
+      "full_hidden_state_verified": false,
+      "observation_capture_mode": "native_reference",
+      "assignment_tokens": [
+        "local-routing-v4-validation/train/1/0",
+        "local-routing-v4-validation/train/1/0"
+      ],
+      "difference_examples": {}
+    },
+    {
+      "group_uid": "live-1",
+      "worker_slots": [
+        0,
+        1
+      ],
+      "group_size": 2,
+      "classification": [],
+      "observation_variant_count": 1,
+      "policy_prompt_variant_count": 1,
+      "initial_score_min": 0,
+      "initial_score_max": 0,
+      "initial_score_known": 2,
+      "initial_score_unknown": 0,
+      "differing_components": [],
+      "needs_audit": [],
+      "evidence_errors": [],
+      "evidence_record_count": 2,
+      "structure_evidence_available": false,
+      "structure_difference_observed": null,
+      "alias_equivalence": null,
+      "initial_state_status": "unverified",
+      "full_hidden_state_verified": false,
+      "observation_capture_mode": "native_reference",
+      "assignment_tokens": [
+        "local-routing-v4-validation/train/2/0",
+        "local-routing-v4-validation/train/2/0"
+      ],
+      "difference_examples": {}
+    }
+  ],
+  "historical_replay": {
+    "source": "local real JVM captures made for 81c6bfd, not HPC 160878 captures",
+    "capture_sha256": "241d7f8670eb2a1b5b91bf2f5f0cb928a8223bbf1209a7b57da118efe4cee438",
+    "observer_results": [
+      {
+        "group_uid": "historical-local-81c6bfd",
+        "worker_slots": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "group_size": 8,
+        "classification": [
+          "suspicious_semantic_difference"
+        ],
+        "observation_variant_count": 1,
+        "policy_prompt_variant_count": null,
+        "initial_score_min": 0,
+        "initial_score_max": 0,
+        "initial_score_known": 8,
+        "initial_score_unknown": 0,
+        "differing_components": [
+          "objects",
+          "possible_action_templates",
+          "possible_actions",
+          "possible_object_referents"
+        ],
+        "needs_audit": [
+          "objects",
+          "possible_action_templates",
+          "possible_actions",
+          "possible_object_referents"
+        ],
+        "evidence_errors": [],
+        "evidence_record_count": 8,
+        "structure_evidence_available": true,
+        "structure_difference_observed": false,
+        "alias_equivalence": null,
+        "initial_state_status": "unverified",
+        "full_hidden_state_verified": false,
+        "observation_capture_mode": "historical",
+        "assignment_tokens": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "difference_examples": {
+          "objects": [
+            [
+              [
+                "book by jane austen on book shelf containing book (beowulf) and book (pride and prejudice)",
+                1
+              ],
+              [
+                "book by jane austen on shelf",
+                1
+              ]
+            ],
+            [
+              [
+                "book (pride and prejudice) on shelf containing book (beowulf) and book (pride and prejudice)",
+                1
+              ]
+            ]
+          ],
+          "possible_actions": [
+            [
+              [
+                "focus on book (pride and prejudice)",
+                1
+              ],
+              [
+                "focus on book on shelf containing book (beowulf) and book (pride and prejudice)",
+                1
+              ],
+              [
+                "look at book (pride and prejudice)",
+                1
+              ]
+            ],
+            [
+              [
+                "focus on book (pride and prejudice) by jane austen",
+                1
+              ],
+              [
+                "focus on book (pride and prejudice) by jane austen in book shelf",
+                1
+              ],
+              [
+                "look at book (pride and prejudice) by jane austen",
+                1
+              ]
+            ]
+          ]
+        },
+        "example_scope": "first two differing workers, up to three items per field; original capture hash retained"
+      }
+    ]
+  },
+  "unit_tests": "44 passed; fault injection, native RNG/inputs/reward, historical fixtures, anchor-support counts"
+}

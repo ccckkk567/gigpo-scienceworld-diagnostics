@@ -68,6 +68,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=${GIGPO_NUM_GPUS:-2} \
     trainer.nnodes=1 \
     trainer.save_freq=10 \
+    +trainer.early_checkpoint_steps=[2] \
     trainer.test_freq=5 \
     trainer.total_epochs=150 \
     trainer.val_before_train=True \

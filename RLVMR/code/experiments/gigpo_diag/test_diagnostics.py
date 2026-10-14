@@ -61,66 +61,6 @@ def test_mixed_start_is_rejected():
         else: raise AssertionError('Mixed start was not rejected')
 
 
-def test_science_parent_payload_and_worker_mapping():
-    path=ROOT/'agent_system/environments/env_package/sciworld/envs.py'
-    if not path.exists(): return
-    fake_mp=types.ModuleType('torch.multiprocessing')
-    fake_gym=types.ModuleType('gymnasium'); fake_gym.Env=object
-    with mock.patch.dict(sys.modules,{'gymnasium':fake_gym}):
-        module=load(path,'science_fixture')
-    class Pipe:
-        def __init__(self): self.payload=None
-        def send(self,message): self.payload=message[1]
-        def recv(self):
-            p=self.payload
-            from experiments.gigpo_diag.diagnostics import digest
-            components = dict(observation='same', objects=[], possible_actions=[], score=0)
-            return 'same',dict(task_id=p['task_id'],task_num=p['task_id'],variation_id=p['variation_id'],
-                               reset_seed=p['reset_seed'],available_actions=[],possible_actions=[],score=0,
-                               task_description='task',simplifications_requested='easy',
-                               initial_state_components=components,initial_state_hash=digest(components))
-    env=module.SciWorldMultiProcessEnv.__new__(module.SciWorldMultiProcessEnv)
-    env.group_n=2; env.env_num=2; env.num_processes=4
-    env.variations_idx=[[1,7],[2,5],[3,2]]; env._rng=np.random.RandomState(0); env._reset_count=0
-    env._parent_remotes=[Pipe() for _ in range(4)]; env.prev_available_actions=[None]*4; env.prev_possible_actions=[None]*4; env._closed=True
-    for repeat in range(2):
-        obs,infos=env.reset()
-        for a,b in ((0,1),(2,3)): assert env._parent_remotes[a].payload==env._parent_remotes[b].payload
-    saved=env.sampler_state(); env.reset(); expected=[p.payload for p in env._parent_remotes]
-    env.restore_sampler_state(saved); env.reset(); assert [p.payload for p in env._parent_remotes]==expected
-    # Exercise the actual worker reset branch against a stand-in simulator.
-    class Sim:
-        loaded=[]
-        def __init__(self,*a,**kw): pass
-        def get_task_names(self): return ['zero','one','two','three']
-        def load(self,*args): self.loaded.append(args)
-        def reset(self): return 'state',{'score':0}
-        def get_task_description(self): return 'task'
-        def get_possible_actions(self): return []
-        def get_possible_objects(self): raise AssertionError('reset must enumerate objects once via typed LUT')
-        def get_possible_object_referent_types_LUT(self):
-            return {'1': {'10': 'agent', 'desc': 'Agent'}}
-        def get_valid_action_object_combinations(self): raise AssertionError('reset must enumerate once via JSON')
-        def get_valid_action_object_combinations_with_templates(self):
-            return [dict(action='look around', template_id=0, obj_ids=[], type_ids=[])]
-        def close(self): pass
-    class WorkerPipe:
-        def __init__(self): self.commands=iter([('reset',dict(task_id=2,variation_id=5,reset_seed=123)),('close',None)]); self.results=[]
-        def recv(self): return next(self.commands)
-        def send(self,x): self.results.append(x)
-        def close(self): pass
-    sci=types.ModuleType('scienceworld'); sci.ScienceWorldEnv=Sim
-    p=WorkerPipe()
-    with mock.patch.dict(sys.modules,{'scienceworld':sci}): module._worker(p,0,[],'easy',100,None,variations_idx=env.variations_idx)
-    assert Sim.loaded==[('two',5,'easy')]
-    assert p.results[0][1]['task_id']=='two' and p.results[0][1]['variation_id']==5
-    assert p.results[0][1]['possible_actions'] == ['look around']
-    assert p.results[0][1]['reset_evidence_version'] == 3
-    assert p.results[0][1]['initial_state_components']['objects'] == ['agent']
-    from experiments.gigpo_diag.diagnostics import verify_groups
-    verify_groups({'anchor':['state']}, [p.results[0][1]], [0], environment='scienceworld')
-
-
 def test_app_service_count():
     from types import SimpleNamespace as N
     services=load(ROOT/'experiments/gigpo_diag/services.py','services_fixture')

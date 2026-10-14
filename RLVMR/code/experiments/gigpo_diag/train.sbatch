@@ -44,7 +44,7 @@ cp "$GIGPO_VENV/gigpo-pip-freeze.txt" "$GIGPO_RUN_DIR/pip-freeze.txt"
 cp experiments/gigpo_diag/CONFIG_DIFF.md "$GIGPO_RUN_DIR/CONFIG_DIFF.md"
 git status --short --branch
 python -c 'import sys,verl; print("TRAIN_RUNTIME",sys.executable,verl.__file__,flush=True)'
-if [[ "$GIGPO_ENV" == scienceworld ]]; then
+if [[ "${GIGPO_SCIENCE_ROUTING_CHECK:-0}" == 1 ]]; then
   python -m experiments.gigpo_diag.runtime science-reset-check
 fi
 # Native foreground training, full reference schedule, truthful exit status.

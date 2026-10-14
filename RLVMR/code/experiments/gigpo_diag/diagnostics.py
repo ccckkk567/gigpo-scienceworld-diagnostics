@@ -19,6 +19,7 @@ _batch_serial = 0
 _adv_ids = []
 _pending = {}
 _optimizer_steps = 0
+_reset_counts = Counter()
 
 
 def enabled():
@@ -174,7 +175,7 @@ def _science_action_structure(components):
 
 
 def _science_reset_basis(info):
-    """Compare reset identity, objects, score and structural action evidence.
+    """Legacy offline evidence decoder, never a production reset gate.
 
     Raw observation/object/command aliases stay in the evidence hash. This is
     not a full hidden-world equality test. Historical v1/v2 keep their old rules.
@@ -218,97 +219,118 @@ def _science_reset_basis(info):
             'recorded_state': state}
 
 
-def verify_groups(obs, infos, uids, *, environment=None):
-    """Enforce reset consistency; raw ScienceWorld text differences are diagnostic.
+@safe
+def capture_science_reset(info, observation, objects):
+    """Only already-returned native values; optional fields installed atomically."""
+    components = dict(observation=observation, objects=objects,
+                      possible_actions=info['possible_actions'], score=info.get('score'))
+    evidence = dict(initial_state_components=components, initial_state_hash=digest(components),
+                    reset_evidence_version=4, observation_capture_mode='native_reference')
+    info.update(evidence)
 
-    This checks available reset evidence, not full hidden-state determinism.
-    Neither observations nor GiGPO's exact anchor clustering are modified.
-    """
+
+def science_reset_observations(obs, infos, uids):
+    """Offline-capable observer. Equal UUIDs never certify world equivalence."""
+    grouped = defaultdict(list)
+    for slot, uid in enumerate(uids):
+        grouped[str(uid)].append(slot)
+    rows = []
+    for uid, slots in grouped.items():
+        anchors = [obs['anchor'][i] for i in slots]
+        prompts = [obs.get('text', [None] * len(infos))[i] for i in slots]
+        selected = [infos[i] for i in slots]
+        components = [x.get('initial_state_components') for x in selected]
+        problems = []
+        structures = []
+        for slot, info, component in zip(slots, selected, components):
+            try:
+                if not isinstance(component, dict) or info.get('initial_state_hash') != digest(component):
+                    raise ValueError('missing/corrupt optional capture')
+                version = info.get('reset_evidence_version')
+                if version == 4:
+                    if not all(k in component for k in ('observation', 'objects', 'possible_actions', 'score')):
+                        raise ValueError('incomplete native capture')
+                else:
+                    # Historical records only; never invoke structural APIs in training.
+                    structures.append(_science_reset_basis(info)['recorded_state'])
+            except Exception as exc:
+                problems.append({'worker_slot': slot, 'error': f'{type(exc).__name__}: {exc}'})
+        keys = set().union(*(x.keys() for x in components if isinstance(x, dict)))
+        differing = sorted(k for k in keys if len({digest(x.get(k) if isinstance(x, dict) else None) for x in components}) > 1)
+        score_raw = [x.get('score') for x in selected]
+        scores = [x for x in score_raw if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)]
+        anchor_variants = len({digest(x) for x in anchors})
+        prompt_known = all(isinstance(x, str) for x in prompts)
+        line_order = anchor_variants > 1 and all(isinstance(x, str) for x in anchors) and len({digest(dict(Counter(x.splitlines()))) for x in anchors}) == 1
+        suspicious = [k for k in differing if k != 'observation' or not line_order]
+        if len({digest(x.get('task_description')) for x in selected}) > 1:
+            suspicious.append('task_description')
+        if len({digest(x) for x in score_raw}) > 1 and 'score' not in suspicious:
+            suspicious.append('score')
+        labels = []
+        if line_order: labels.append('known_rendering_difference')
+        if suspicious or (anchor_variants > 1 and not line_order): labels.append('suspicious_semantic_difference')
+        if problems: labels.append('evidence_unavailable')
+        row = dict(group_uid=uid, worker_slots=slots, group_size=len(slots), classification=labels,
+                   observation_variant_count=anchor_variants,
+                   policy_prompt_variant_count=len({digest(x) for x in prompts}) if prompt_known else None,
+                   initial_score_min=min(scores) if scores else None, initial_score_max=max(scores) if scores else None,
+                   initial_score_known=len(scores), initial_score_unknown=len(slots)-len(scores),
+                   differing_components=differing, needs_audit=suspicious,
+                   evidence_errors=problems, evidence_record_count=len(slots),
+                   structure_evidence_available=len(structures) == len(slots),
+                   structure_difference_observed=(len({digest(x) for x in structures}) > 1) if len(structures) == len(slots) else None,
+                   alias_equivalence=None, initial_state_status='unverified', full_hidden_state_verified=False,
+                   observation_capture_mode=selected[0].get('observation_capture_mode', 'historical'),
+                   assignment_tokens=[x.get('load_receipt', {}).get('assignment_token') for x in selected])
+        # Bounded examples for console/review; full captures remain in group_resets.
+        row['difference_examples'] = {k: [x.get(k) if isinstance(x, dict) else None for x in components[:2]] for k in differing if k == 'score'}
+        for key in ('objects', 'possible_actions'):
+            if key in differing and all(isinstance(x, dict) and isinstance(x.get(key), list) for x in components):
+                first = Counter(components[0][key])
+                row['difference_examples'][key] = [list((Counter(x[key])-first).items())[:6] for x in components[1:]]
+        rows.append(row)
+    return rows
+
+
+@safe
+def observe_science_reset(obs, infos, uids, is_train=True):
+    scope = 'train' if is_train else 'eval'
+    try:
+        rows = science_reset_observations(obs, infos, uids)
+    except Exception as exc:
+        _reset_counts[f'{scope}/observer_failure_count'] += 1
+        raise  # @safe reports unavailable, never hides a native operation failure.
+    counts = Counter(groups=len(rows), records=len(infos), assignment_checked_count=len(infos),
+                     uid_binding_checked_group_count=len(rows), assignment_mismatch_count=0, uid_binding_mismatch_count=0,
+                     known_rendering_difference=0, suspicious_semantic_difference=0, evidence_unavailable=0)
+    for row in rows:
+        counts.update(row['classification'])
+        counts['evidence_unavailable_records'] += len(row['evidence_errors'])
+        counts['observation_difference_groups'] += row['observation_variant_count'] > 1
+        counts['policy_prompt_difference_groups'] += (row['policy_prompt_variant_count'] or 0) > 1
+        counts['policy_prompt_unknown_groups'] += row['policy_prompt_variant_count'] is None
+        counts['structure_available_groups'] += row['structure_evidence_available']
+    for key, value in counts.items():
+        _reset_counts[f'{scope}/{key}'] += value
+    write('science_reset_observations', [{**row, 'sample_kind': scope} for row in rows])
+    print('SCIENCE_RESET_DIAGNOSTICS ' + json.dumps(dict(scope=scope, **counts, world_equivalence='unverified')), flush=True)
+    return rows
+
+
+def verify_groups(obs, infos, uids, *, environment=None):
+    if environment in ('scienceworld', 'sciworld'):
+        # Compatibility/offline entry point only. Live parent/collector contracts
+        # are explicit calls in envs.py/rollout_loop.py, independent of logging.
+        return observe_science_reset(obs, infos, uids)
     if not (len(obs['anchor']) == len(infos) == len(uids)):
-        raise RuntimeError("Group reset cardinality mismatch; refusing advantage update")
-    science = environment in ("scienceworld", "sciworld")
+        raise RuntimeError('Group reset cardinality mismatch; refusing advantage update')
     grouped = defaultdict(list)
     for i, uid in enumerate(uids):
-        raw = {**identity(infos[i]), "anchor": obs["anchor"][i],
-               "score": infos[i].get("score"), "state": infos[i].get("initial_state_hash")}
-        error = None
-        try:
-            basis = _science_reset_basis(infos[i]) if science else raw
-        except ValueError as exc:
-            basis, error = {}, str(exc)
-        grouped[str(uid)].append({"worker_slot": i, "guard_state": raw,
-                                 "guard_hash": digest(raw), "comparison_basis": basis,
-                                 "evidence_error": error, "reset_info": infos[i]})
-    failures, text_differences, action_differences, object_differences = [], [], [], []
-    for uid, workers in grouped.items():
-        keys = set().union(*(w['comparison_basis'].keys() for w in workers))
-        fields = [key for key in sorted(keys)
-                  if len({digest(w['comparison_basis'].get(key)) for w in workers}) != 1]
-        component_keys = set().union(*(w['reset_info'].get('initial_state_components', {}).keys() for w in workers))
-        components = [key for key in sorted(component_keys)
-                      if len({digest(w['reset_info'].get('initial_state_components', {}).get(key)) for w in workers}) != 1]
-        if fields or any(w['evidence_error'] for w in workers):
-            failures.append({'group_uid': uid, 'differing_fields': fields,
-                             'differing_state_components': components, 'workers': workers})
-            continue
-        if science and 'objects' in components:
-            object_differences.append({
-                'group_uid': uid, 'guard_result': 'reset_evidence_matches',
-                'object_difference': 'rendered_names_differ_identity_and_type_match',
-                'full_hidden_state_verified': False,
-                'object_variant_count': len({digest(w['reset_info']['initial_state_components']['objects']) for w in workers}),
-                'workers': workers})
-        if science and 'possible_actions' in components:
-            action_differences.append({
-                'group_uid': uid, 'guard_result': 'reset_evidence_matches',
-                'action_difference': 'rendered_commands_differ_structure_matches',
-                'full_hidden_state_verified': False,
-                'action_variant_count': len({digest(w['reset_info']['initial_state_components']['possible_actions']) for w in workers}),
-                'workers': workers})
-        anchors = [w['guard_state']['anchor'] for w in workers]
-        if science and len({digest(anchor) for anchor in anchors}) > 1:
-            # Classify only: never sort/rewrite model inputs or advantage anchors.
-            same_lines = all(isinstance(anchor, str) for anchor in anchors) and len(
-                {digest(dict(Counter(anchor.splitlines()))) for anchor in anchors}) == 1
-            text_differences.append({'group_uid': uid, 'guard_result': 'reset_evidence_matches',
-                                     'observation_difference': 'line_order_only' if same_lines else 'content_difference_unverified',
-                                     'full_hidden_state_verified': False,
-                                     'anchor_variant_count': len({digest(anchor) for anchor in anchors}),
-                                     'workers': workers})
-    if text_differences:
-        summaries = [{k: v for k, v in row.items() if k != 'workers'} for row in text_differences]
-        print('GROUP_RESET_TEXT_DIFFERENCE ' + json.dumps(summaries, ensure_ascii=False), flush=True)
-        if enabled():
-            try:
-                write('group_reset_text_differences', text_differences)
-            except Exception as exc:
-                print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
-    if action_differences:
-        summaries = [{k: v for k, v in row.items() if k != 'workers'} for row in action_differences]
-        print('GROUP_RESET_ACTION_TEXT_DIFFERENCE ' + json.dumps(summaries, ensure_ascii=False), flush=True)
-        if enabled():
-            try:
-                write('group_reset_action_text_differences', action_differences)
-            except Exception as exc:
-                print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
-    if object_differences:
-        summaries = [{k: v for k, v in row.items() if k != 'workers'} for row in object_differences]
-        print('GROUP_RESET_OBJECT_TEXT_DIFFERENCE ' + json.dumps(summaries, ensure_ascii=False), flush=True)
-        if enabled():
-            try:
-                write('group_reset_object_text_differences', object_differences)
-            except Exception as exc:
-                print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
-    if failures:
-        summaries = [{k: v for k, v in row.items() if k != 'workers'} for row in failures]
-        print('GROUP_RESET_MISMATCH ' + json.dumps(summaries, ensure_ascii=False), flush=True)
-        if enabled():
-            try:
-                write('group_guard_failures', failures)
-            except Exception as exc:
-                print(f'GROUP_RESET_EVIDENCE_WRITE_FAILED {type(exc).__name__}: {exc}', flush=True)
-        raise RuntimeError("Mixed or missing task/variation/reset evidence in native collector uid; refusing advantage update; "
-                           "see GROUP_RESET_MISMATCH and group_guard_failures JSONL")
+        grouped[str(uid)].append({**identity(infos[i]), 'anchor': obs['anchor'][i],
+                                 'score': infos[i].get('score'), 'state': infos[i].get('initial_state_hash')})
+    if any(len({digest(x) for x in group}) != 1 for group in grouped.values()):
+        raise RuntimeError('Mixed reset evidence in native collector uid; refusing advantage update')
 
 
 def extraction(raw, env):
@@ -383,6 +405,7 @@ def step(ctx, batch, batch_input, raw, obs, next_obs, rewards, dones, infos, act
                "event_evidence_ref": ids[i],
                "format_valid_native": valid, "extraction_success": parsed, "fallback": not parsed,
                "execution": execution, "done_raw": done, "reference_success": won, "strict_success": strict,
+               "strict_label_error": info.get("strict_label_error"),
                "score_pre": ctx["prev_score"][i], "score_post": score,
                "env_reward": float(plain(rewards[i])), "events": event,
                "input_truncated": False if ctx["config"].data.truncation == "error" else None,
@@ -394,7 +417,9 @@ def step(ctx, batch, batch_input, raw, obs, next_obs, rewards, dones, infos, act
         ep["extraction_count"] += int(parsed)
         ep["fallback_count"] += int(not parsed)
         ep["reference_success"] = ep["reference_success"] or won
-        if strict is not None:
+        if env == 'scienceworld':
+            ep['strict_success'] = bool(strict) if strict is not None else None
+        elif strict is not None:
             ep["strict_success"] = bool(strict)
         ep["native_score_final"] = score
         for key, value in event.items():
@@ -483,6 +508,14 @@ def capture_core(groups, step_groups, token_rewards, step_rewards, ae, astep, jo
                                 "return_min": min(x["actual_step_return"] for x in values),
                                 "return_max": max(x["actual_step_return"] for x in values)} for key, values in anchors.items()])
     unique = list({r['analysis_step_id'] or str(i): r for i,r in enumerate(rows)}.values())
+    supported = []
+    unknown_support = 0
+    for row in unique:
+        values = anchors[row['step_group_id']]
+        if any(x['analysis_step_id'] is None for x in values):
+            unknown_support += 1
+            continue
+        supported.append((row, len({x['analysis_step_id'].rsplit(':', 1)[0] for x in values}) >= 2))
     _pending = {"diag/adv/joint_reconstruction_error": err,
                 "diag/adv/joint_nonzero_step_rate": sum(abs(x['joint']) > 1e-6 for x in unique) / len(unique),
                 "diag/adv/unique_active_steps": len(unique), "diag/adv/training_rows": len(rows),
@@ -490,11 +523,28 @@ def capture_core(groups, step_groups, token_rewards, step_rewards, ae, astep, jo
                 "diag/adv/AS_abs_mean": sum(abs(x['AS']) for x in unique) / len(unique)}
 
 
+    _pending.update({'diag/anchor/cross_trajectory_supported_steps': sum(ok for _, ok in supported),
+                     'diag/anchor/support_known_steps': len(supported),
+                     'diag/anchor/support_unknown_steps': unknown_support})
+    if supported:
+        _pending['diag/anchor/cross_trajectory_support_rate'] = sum(ok for _, ok in supported) / len(supported)
+    for label, flag in [('supported', True), ('unsupported', False)]:
+        values = [row for row, ok in supported if ok == flag]
+        _pending[f'diag/adv/AS_nonzero_{label}_steps'] = sum(abs(x['AS']) > 1e-6 for x in values)
+        _pending[f'diag/adv/AS_{label}_denominator'] = len(values)
+
+
 @safe
 def update_completed(value, metrics):
     global _update
     _update = int(value)
     metrics.update(_pending)
+    for key, count in _reset_counts.items():
+        metrics['diag/reset_cumulative/' + key] = count
+    for scope in ('train', 'eval'):
+        denominator = _reset_counts.get(f'{scope}/records', 0)
+        if denominator:
+            metrics[f'diag/reset_cumulative/{scope}/evidence_unavailable_rate'] = _reset_counts.get(f'{scope}/evidence_unavailable_records', 0) / denominator
     metrics["train/policy_update"] = _update
     write("updates", [{"policy_update": _update, "native_actor_update_returned": True}])
     if _update == 1 or _update % 5 == 0:

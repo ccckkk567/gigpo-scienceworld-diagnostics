@@ -297,3 +297,9 @@ capture hashes and scope. No GPU policy rollout or HPC optimizer update was run.
 HPC full job 160883 was RUNNING when this patch was prepared. Do not pull into
 its active checkout; apply this patch after it exits, or use an independent
 checkout for a later job. No environment preparation rerun is needed.
+
+
+## ScienceWorld routing policy v4 (base 81c6bfd)
+
+`SCIENCE_ROUTING_POLICY.md` supersedes earlier ScienceWorld content-equality guard descriptions.
+Production resets again use native string getters. Parent request/load receipts and actual collector UID/token binding remain fatal contracts; optional content evidence only reports differences/unknowns. Structured evidence decoding is offline only. No task filtering, retry-to-match, reward/anchor/GiGPO change. Startup reset smoke is opt-in via `GIGPO_SCIENCE_ROUTING_CHECK=1`; update 2 now saves a native checkpoint before the existing period-10 schedule. Evaluation UID groups follow actual group_n=1. Evidence and limits: `SCIENCE_ROUTING_VALIDATION.json`.

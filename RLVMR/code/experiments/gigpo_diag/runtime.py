@@ -81,10 +81,14 @@ def record_provenance(config):
                 'job_id':os.environ.get('SLURM_JOB_ID'), 'checkpoint_dir':config.trainer.default_local_dir,
                 'initial_checkpoint':str(model), 'tracker_requested':'swanlab', 'seed':config.env.seed,
                 'resume_from_path':config.trainer.get('resume_from_path'),
+                'parent_run':os.environ.get('GIGPO_PARENT_RUN'),
+                'reset_guard_policy':'science-routing-v4', 'observation_capture_mode':'native_reference',
+                'early_checkpoint_steps':list(config.trainer.get('early_checkpoint_steps', [])),
+                'confirmed_semantic_findings':os.environ.get('GIGPO_SCIENCE_CONFIRMED_VIOLATIONS'),
                 'reference_schedule_epochs':config.trainer.total_epochs, 'formal_holdout_details_saved':False}
     (output/'RUN_MANIFEST.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     snapshot = output/'implementation_snapshot'
-    for name in ('gigpo/core_gigpo.py','agent_system/environments/env_manager.py','agent_system/environments/env_package/sciworld/envs.py','agent_system/multi_turn_rollout/rollout_loop.py','verl/trainer/ppo/ray_trainer.py','experiments/gigpo_diag/diagnostics.py','experiments/gigpo_diag/compiler_cache.py','experiments/gigpo_diag/common.sh','verl/single_controller/ray/base.py','experiments/gigpo_diag/runtime.py','experiments/gigpo_diag/SOURCE.json','experiments/gigpo_diag/CONFIG_DIFF.md'):
+    for name in ('gigpo/core_gigpo.py','agent_system/environments/env_manager.py','agent_system/environments/env_package/sciworld/envs.py','agent_system/multi_turn_rollout/rollout_loop.py','verl/trainer/ppo/ray_trainer.py','experiments/gigpo_diag/diagnostics.py','experiments/gigpo_diag/compiler_cache.py','experiments/gigpo_diag/science_contract.py','experiments/gigpo_diag/common.sh','verl/single_controller/ray/base.py','experiments/gigpo_diag/runtime.py','experiments/gigpo_diag/SOURCE.json','experiments/gigpo_diag/CONFIG_DIFF.md'):
         dest=snapshot/name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root/name,dest)
@@ -92,9 +96,10 @@ def record_provenance(config):
 
 
 def science_reset_check():
-    """Four live simulators, two groups, two resets; no policy calls."""
+    """Opt-in communication/routing smoke; no content equivalence gate."""
     from agent_system.environments.env_package.sciworld.envs import build_sciworld_envs
-    from experiments.gigpo_diag.diagnostics import plain, verify_groups
+    from experiments.gigpo_diag.diagnostics import plain
+    from experiments.gigpo_diag.science_contract import validate_collector_binding
     pool_path=Path('agent_system/environments/env_package/sciworld/variations_idx/L0_idx.json')
     pool=json.loads(pool_path.read_text())['train']
     env=build_sciworld_envs(seed=0, env_num=2, group_n=2, variations_idx=pool, simplifications_preset='easy')
@@ -102,7 +107,8 @@ def science_reset_check():
     try:
         for round_index in range(2):
             obs, infos=env.reset()
-            verify_groups({'anchor':obs}, infos, [0,0,1,1], environment='scienceworld')
+            validate_collector_binding(env.expected_assignments, [i['load_receipt'] for i in infos],
+                                       ['a','a','b','b'], ['0','1','2','3'], 2)
             for i, info in enumerate(infos):
                 results.append({'reset_round':round_index,'group_slot':i//2,'worker_slot':i,
                                 'observation':obs[i],'info':plain(info)})
@@ -110,7 +116,7 @@ def science_reset_check():
         env.close()
     path=Path(os.environ['GIGPO_RUN_DIR'])/'science_group_reset_check.json'
     path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding='utf-8')
-    print('LIVE_GROUP_RESET_CHECK_PASSED groups=2 repeats=2 trajectories=0', flush=True)
+    print('SCIENCE_ROUTING_CHECK_PASSED groups=2 repeats=2 trajectories=0 world_equivalence=unverified', flush=True)
 
 
 def science_reset_audit():
@@ -128,7 +134,7 @@ def science_reset_audit():
     (out/'assignments.json').write_text(json.dumps(assignments,indent=2),encoding='utf-8')
     result={'training_updates':0,'policy_rollouts':0,'groups':16,'group_size':8,
             'purpose':'first native training reset audit only',
-            'guard_basis':'task/variation/reset identity and recorded non-text evidence; raw observation is diagnostic',
+            'guard_basis':'parent assignment versus completed native load receipt; content is diagnostic',
             'full_hidden_state_verified':False,
             'scienceworld_version':importlib.metadata.version('scienceworld'),
             'code_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()}

@@ -1050,7 +1050,8 @@ class RayPPOTrainer(object):
                         metrics.update(val_metrics)
 
                     if self.config.trainer.save_freq > 0 and ( is_last_step or \
-                            self.global_steps % self.config.trainer.save_freq == 0):
+                            self.global_steps % self.config.trainer.save_freq == 0 or
+                            self.global_steps in self.config.trainer.get('early_checkpoint_steps', [])):
                         with _timer('save_checkpoint', timing_raw):
                             self._save_checkpoint()
 

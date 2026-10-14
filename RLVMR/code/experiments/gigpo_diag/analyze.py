@@ -75,11 +75,41 @@ def main():
             if ax.lines: ax.legend(fontsize=8)
             fig.tight_layout(); fig.savefig(root/'figures'/f'{name}.png',dpi=170); plt.close(fig)
             figures.append(name)
+    reset_rows=list(rows(root, 'science_reset_observations'))
+    with (tables/'science_reset_observations.jsonl').open('w', encoding='utf-8') as f:
+        for row in reset_rows: f.write(json.dumps(row, ensure_ascii=False)+'\n')
+    scalars=[]
+    for record in rows(root, 'metrics'):
+        for key, value in record.get('metrics', {}).items():
+            if key.startswith(('diag/reset_cumulative/', 'diag/anchor/', 'diag/adv/')) and isinstance(value, (int,float)):
+                scalars.append(dict(update=record['global_step'], metric=key, value=value))
+    with (tables/'routing_anchor_metrics.csv').open('w', newline='', encoding='utf-8') as f:
+        w=csv.DictWriter(f, fieldnames=['update','metric','value']); w.writeheader(); w.writerows(scalars)
+    if scalars:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        (root/'figures').mkdir(exist_ok=True)
+        plots = {
+            'reset_classification': ['diag/reset_cumulative/train/' + k for k in
+                ('known_rendering_difference','suspicious_semantic_difference','evidence_unavailable','groups')],
+            'native_anchor_support': ['diag/anchor/cross_trajectory_support_rate','diag/adv/joint_nonzero_step_rate']}
+        for name, keys in plots.items():
+            fig,ax=plt.subplots(figsize=(8,4.5))
+            for key in keys:
+                points=sorted([r for r in scalars if r['metric']==key], key=lambda r:r['update'])
+                if points: ax.plot([r['update'] for r in points],[r['value'] for r in points],marker='o',label=key.rsplit('/',1)[-1])
+            ax.set(xlabel='Completed policy update', ylabel='Cumulative groups' if name=='reset_classification' else 'Rate', title=name)
+            if ax.lines: ax.legend(fontsize=8)
+            fig.tight_layout(); fig.savefig(root/'figures'/f'{name}.png',dpi=170); plt.close(fig)
+            figures.append(name)
     report=root/'reports'; report.mkdir(exist_ok=True)
     cases=[e for e in eps if e.get('detail_selected')][:3]
     body=[f"# {manifest.get('env','unknown')} / {root.name}",f"Status: **{status}**. Native actor updates returned in this run: **{updates_this_run}**; latest absolute policy version: **{max_update}**.",
           f"Recorded episodes: {len(eps)}. No model update or trajectory is inferred from a submitted job.",
           "## Evidence", "- Full counts, denominator, unknown count and sample kind: `tables/rollout_metrics.csv`.",
+          "- Reset classifications with score ranges and unknown evidence: `tables/science_reset_observations.jsonl`.",
+          "- Native anchor support and routing counts: `tables/routing_anchor_metrics.csv`; only actual metrics are plotted.",
           "- Actual AE/AS/joint, native reward inputs before/after penalty: `diagnostics/advantages.*` and `reward_inputs.*`.",
           "- Parameter samples and actual weight-load return path: `diagnostics/optimizer.*` and `weight_sync.*`.",
           "- Full preselected groups: `diagnostics/detailed_steps.*`; reference holdout long text is excluded.",

@@ -8,14 +8,25 @@ This directory implements the 2026-10-15 v1 study plan. No new training, reward 
 
 Local read-only preparation recovered 408 training episodes, 58 A transitions, 58 linked historical AE/AS rows,
 and 10 full-text candidate prefixes from the deduplicated evidence package. See `data/inventory_report.md`.
-No local GPU checkpoint inference or actual ScienceWorld study rollout has run. HPC execution is the next step.
-The model-file availability, merge and replay quality reported by the pilot must be inspected before research conclusions.
+No local GPU checkpoint inference has run. HPC results below come from the user's actual run logs.
+The model-file availability, merge and replay quality must be inspected before research conclusions.
 
 Pilot job 163357 (commit 37189d9) stopped during inventory with zero study episodes. Its preparation incorrectly
 used position 22 in documentation `tasks.json` as a native routing index. The native JVM sorts task names;
 the original training load receipts consistently record index 18 for this task. Protocol `skill-bottleneck-v1.1-routing`
 uses those receipts and validates the frozen natural/prefix variations against the real L0 training pool during
 preparation and inventory. Task name, selected variations/prefixes, sampling and labels are unchanged.
+
+Pilot 163386 (e2eee7c) produced 16 completed base-model trials: N reached A in 0/8; P and H each completed B
+in 0/4, with all eight prefix replays verified. The trained u50/u110/u150 models never loaded: the native merger
+imported `verl.utils.megatron_utils` unconditionally, which requires the absent `megatron` package even for FSDP.
+These results do not measure checkpoint evolution. The prior exit=0 meant the driver finished, not all models finished.
+
+`fsdp_export.py` now runs the same locked native merger with the Megatron-only import moved inside the Megatron
+function in memory. No FSDP operation changes, no package installation, and no edits to the native source checkout.
+`conversion_manifest.json` records the original/adapter/executed-source hashes. CPU tests compare the entire transformed
+AST and merge synthetic two-rank tensors through the real native FSDP body, checking every exported bf16 tensor exactly.
+This is not a claim that the actual HPC checkpoint shards have already been converted successfully.
 
 ## Frozen pilot
 
@@ -52,7 +63,7 @@ python analyze.py "$existing_output_dir"
 ```
 
 The inventory includes model shard presence and the saved checkpoint pointer. It does not require optimizer files.
-The pilot hashes sources and exported weights, uses the original model_merger, and records actual vLLM loaded path.
+The pilot hashes sources and exported weights, uses the original FSDP body via `fsdp_export.py`, and records actual vLLM loaded path.
 Each model is loaded in a fresh process. Each trial gets a new native worker and explicit task/variation assignment.
 Original manager and collector render all model-visible prompts and tokenize them; the original parser executes actions.
 
@@ -62,6 +73,18 @@ Each checkpoint directory has run_manifest.json, conversion/inference logs, epis
 decisions.jsonl.gz, resets.jsonl.gz, and replay_audit.jsonl. Compressed records are complete concatenated gzip members.
 Root tables/report link the actual per-checkpoint records. Large model weights are not included in analysis outputs.
 No training dashboard is reused. Training archives, optimizers, weights, and original branches remain untouched.
+
+To complete pilot 163386, set `SCI_PROBE_REUSE_BASE_FROM` to its output directory when submitting `pilot.sbatch`
+(or pass `study.py --reuse-base-from DIR`). A new output directory receives byte-identical base evidence with source
+paths and hashes; original episode run IDs, git commit, and manifests are preserved. The driver checks the frozen protocol,
+prefixes, native source identity and full completed trial set. It then runs only u50/u110/u150 (48 new trials).
+No base inference repeats and no previous output is overwritten. The combined report contains 64 trials if all finish.
+This reuse is valid for this export/orchestration-only repair: runner, prompts, task/variation/seeds, and labels are unchanged.
+
+The summary now reports per-checkpoint and per-trial status. `pilot_complete`/exit 0 requires every planned trial
+to finish execution (task success is not required). A checkpoint conversion, loading, trial error, blocked replay,
+or incomplete trial set is retained as `pilot_partial`/exit 2 after the remaining checkpoints and reports finish.
+Ambiguous replay remains available as auxiliary evidence. Neither partial status nor low success selects new trials.
 
 ## Local preparation and validation
 

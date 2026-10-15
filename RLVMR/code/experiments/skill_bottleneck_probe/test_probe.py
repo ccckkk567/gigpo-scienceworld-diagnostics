@@ -2,13 +2,15 @@ import copy
 import gzip
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 from labels import transition
 from replay import compare, paired_eligible
-from study import select, trials, validate_study_pool
+from study import select, trials, validate_study_pool, trial_summary, reuse_base, save, sha
 from prepare import source_load_receipt
 from analyze import ratio
 
@@ -16,6 +18,75 @@ HERE=Path(__file__).parent
 
 
 class ProbeTests(unittest.TestCase):
+    def test_pilot_keeps_later_checkpoints_after_failure_but_returns_partial_exit(self):
+        import study
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/'shared'; root.mkdir(); out=root/'analysis/pilot'
+            for index,run in enumerate(study.RUNS):
+                folder=root/'logs/gigpo-reproduction/scienceworld'/run
+                cp=folder/'checkpoints'; cp.mkdir(parents=True)
+                save(folder/'RUN_MANIFEST.json',{'code_commit':'fixture'})
+                (cp/'latest_checkpointed_iteration.txt').write_text('110' if index==0 else '150')
+                for step in ([50,110] if index==0 else [150]):
+                    actor=cp/f'global_step_{step}/actor'; actor.mkdir(parents=True)
+                    for rank in range(2):
+                        with (actor/f'model_world_size_2_rank_{rank}.pt').open('wb') as f: f.truncate(1024**2+1)
+            base=root/'data/models/Qwen2.5-1.5B-Instruct-989aa798'; base.mkdir(parents=True)
+            (base/'model.safetensors').write_bytes(b'fixture; not real weights')
+            def process(cmd,**kwargs):
+                if Path(cmd[1]).name=='fsdp_export.py':
+                    export=Path(cmd[cmd.index('--target-dir')+1])
+                    if export.name=='u50': raise subprocess.CalledProcessError(1,cmd)
+                    export.mkdir(); (export/'model.safetensors').write_bytes(b'fixture export')
+                elif Path(cmd[1]).name=='runner.py':
+                    spec=json.loads(Path(cmd[-1]).read_text()); target=Path(spec['output'])
+                    with gzip.open(target/'episodes.jsonl.gz','wt',encoding='utf-8') as f:
+                        for i,row in enumerate(spec['trials']):
+                            status='error' if spec['checkpoint_id']=='u110' and i==0 else 'completed'
+                            f.write(json.dumps({**row,'status':status})+'\n')
+                return SimpleNamespace(returncode=0)
+            argv=['study.py','run','--root',str(root),'--native-code',str(HERE.parents[1]),
+                  '--output',str(out),'--work',str(Path(tmp)/'exports')]
+            with patch.object(sys,'argv',argv),patch.object(study,'git',return_value='fixture_commit'), \
+                 patch.object(study.subprocess,'run',side_effect=process):
+                self.assertEqual(study.main(),2)
+            manifest=json.loads((out/'RUN_MANIFEST.json').read_text())
+            self.assertEqual(manifest['status'],'pilot_partial')
+            self.assertEqual({c['checkpoint_id']:c['status'] for c in manifest['checkpoints']},
+                             {'base':'finished','u50':'failed','u110':'partial','u150':'finished'})
+
+    def test_complete_base_reuse_preserves_evidence_and_rejects_partial_or_changed_protocol(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); old=root/'old'; out=root/'new'; (old/'base').mkdir(parents=True); out.mkdir()
+            for name in ('protocol.json','prefixes.jsonl'):
+                (old/name).write_text('{}\n'); (out/name).write_text('{}\n')
+            manifest=dict(protocol={'fixed':True},source_sha256_lf={'native':'hash'},base_model_revision='revision',
+                          tokenizer_revision='revision',git_commit='prior_commit')
+            save(old/'RUN_MANIFEST.json',{**manifest,'checkpoints':[dict(checkpoint_id='base',status='finished',
+                 source_model_fingerprints=[{'sha256':'weight_hash'}],inference_model_fingerprints=[{'sha256':'weight_hash'}])]})
+            save(old/'base/run_manifest.json',dict(status='finished',checkpoint_load_status='loaded',actual_loaded_model_path='/base'))
+            for name in ('steps.jsonl.gz','decisions.jsonl.gz','resets.jsonl.gz','invocation.json','replay_audit.jsonl'):
+                (old/'base'/name).write_bytes(b'fixture evidence')
+            expected=[{'trial_id':'base-N-0-1'},{'trial_id':'base-P-prefix-1'}]
+            def episodes(rows):
+                with gzip.open(old/'base/episodes.jsonl.gz','wt',encoding='utf-8') as f:
+                    for r in rows: f.write(json.dumps(r)+'\n')
+            complete=[{**r,'status':'completed','run_id':'old'} for r in expected]
+            episodes(complete)
+            c={'path':'/base'}; before=sha(old/'base/episodes.jsonl.gz')
+            reuse_base(old,out,manifest,c,expected)
+            self.assertEqual(c['status'],'reused_completed')
+            self.assertEqual(sha(out/'base/episodes.jsonl.gz'),before)
+            self.assertEqual(sha(old/'base/episodes.jsonl.gz'),before)
+            self.assertEqual(c['reused_from']['git_commit'],'prior_commit')
+            with self.assertRaisesRegex(ValueError,'protocol'):
+                reuse_base(old,out,{**manifest,'protocol':{'fixed':False}},c,expected)
+            for bad in (complete[:1],complete+complete[:1],[complete[0],{**complete[1],'status':'error'}]):
+                episodes(bad)
+                self.assertFalse(trial_summary(old/'base',expected)['complete'])
+                with self.assertRaisesRegex(ValueError,'incomplete'):
+                    reuse_base(old,out,manifest,c,expected)
+
     def test_historical_native_task_index_and_real_training_pool(self):
         protocol=json.loads((HERE/'data/protocol.json').read_text())
         prefixes=[json.loads(s) for s in (HERE/'data/prefixes.jsonl').read_text(encoding='utf-8').splitlines()]

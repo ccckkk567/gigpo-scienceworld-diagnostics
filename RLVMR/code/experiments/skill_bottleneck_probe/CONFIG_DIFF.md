@@ -15,6 +15,13 @@ the original base model config. Only trusted own checkpoint shards are loaded wi
 TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 compatibility flag (the native rank-0 call does not specify weights_only).
 This does not require old optimizer files. A failed merge never silently substitutes base weights.
 
+After pilot 163386 exposed a Megatron-only import at module scope, the study adapter moves that import into the
+Megatron function in memory before executing the locked native script. The FSDP conversion body is unchanged;
+the original file is read-only, and source/transformation hashes are saved per checkpoint. This does not add Megatron.
+Completed base evidence may be copied from pilot 163386 with its original provenance to avoid repeating those 16 trials.
+The new run's remaining 48 trials retain the frozen protocol and sampling schedule. Partial execution now returns exit 2
+after recording all locally available results; this does not change trial selection, rewards, labels, or inference.
+
 Each checkpoint uses a separate process; each trial uses a fresh owned native worker/JVM.
 Output and caches are separate from training. No shared deletion, global process cleanup, HF upload, or SwanLab
 training-run reuse occurs. This is a local-evidence study with independent Slurm output, not a new training run.

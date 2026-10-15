@@ -1,10 +1,12 @@
 """Inventory and pilot entrypoint. Source trees/checkpoints are read-only."""
 import argparse
 import csv
+import gzip
 import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -107,10 +109,56 @@ def csv_write(path, rows):
         w=csv.DictWriter(f,fieldnames=list(dict.fromkeys(k for r in rows for k in r))); w.writeheader(); w.writerows(rows)
 
 
+def trial_summary(target, expected):
+    with gzip.open(target/'episodes.jsonl.gz','rt',encoding='utf-8') as f:
+        rows=[json.loads(s) for s in f]
+    ids=[r['trial_id'] for r in rows]; wanted={r['trial_id'] for r in expected}
+    counts={s:sum(r.get('status')==s for r in rows) for s in sorted({r.get('status','missing') for r in rows})}
+    return dict(expected=len(expected),recorded=len(rows),status_counts=counts,
+        missing=sorted(wanted-set(ids)),unexpected=sorted(set(ids)-wanted),duplicate_count=len(ids)-len(set(ids)),
+        complete=len(ids)==len(wanted) and set(ids)==wanted and all(r.get('status')=='completed' for r in rows))
+
+
+def reuse_base(source, out, manifest, checkpoint, expected):
+    """Copy complete prior base evidence, preserving its original run IDs and per-file hashes."""
+    source=source.resolve(); previous=json.loads((source/'RUN_MANIFEST.json').read_text())
+    for key in ('protocol','source_sha256_lf','base_model_revision','tokenizer_revision'):
+        if previous.get(key)!=manifest[key]: raise ValueError(f'Base reuse differs in {key}')
+    for name in ('protocol.json','prefixes.jsonl'):
+        if sha(source/name)!=sha(out/name): raise ValueError(f'Base reuse differs in {name}')
+    old=next(c for c in previous['checkpoints'] if c['checkpoint_id']=='base')
+    native=json.loads((source/'base/run_manifest.json').read_text())
+    if (old.get('status')!='finished' or native.get('status')!='finished'
+            or native.get('checkpoint_load_status')!='loaded'
+            or native.get('actual_loaded_model_path')!=checkpoint['path']):
+        raise ValueError('Previous base was not successfully loaded and finished')
+    if not old.get('source_model_fingerprints'): raise ValueError('Previous base model fingerprints missing')
+    summary=trial_summary(source/'base',expected)
+    if not summary['complete']: raise ValueError(f'Previous base trials incomplete: {summary}')
+    # Evidence only: no exported model weights, no links into source directories.
+    files=sorted((source/'base').iterdir())
+    required={'run_manifest.json','invocation.json','episodes.jsonl.gz','steps.jsonl.gz',
+              'decisions.jsonl.gz','resets.jsonl.gz','replay_audit.jsonl'}
+    if not required.issubset({p.name for p in files}): raise ValueError('Base raw evidence is incomplete')
+    if any(p.is_symlink() or not p.is_file() or p.suffix not in ('.json','.jsonl','.gz','.log') for p in files):
+        raise ValueError('Unexpected file in base evidence directory')
+    hashes=fingerprint(files)
+    (out/'base').mkdir()
+    for f,row in zip(files,hashes):
+        dest=out/'base'/f.name; shutil.copyfile(f,dest)
+        if sha(dest)!=row['sha256']: raise ValueError(f'Base evidence changed during copy: {f}')
+    checkpoint.update(status='reused_completed',trial_summary=summary,
+        source_model_fingerprints=old['source_model_fingerprints'],
+        inference_model_fingerprints=old.get('inference_model_fingerprints'),
+        reused_from=dict(output=str(source),experiment_id=previous.get('experiment_id',source.name),git_commit=previous['git_commit'],
+            root_manifest_sha256=sha(source/'RUN_MANIFEST.json'),files=hashes))
+
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('command',choices=['inventory','run'])
     ap.add_argument('--root',type=Path,required=True); ap.add_argument('--native-code',type=Path,required=True)
     ap.add_argument('--output',type=Path,required=True); ap.add_argument('--work',type=Path)
+    ap.add_argument('--reuse-base-from',type=Path,help='Read-only import of complete compatible base evidence')
     args=ap.parse_args(); root=args.root.resolve(); out=args.output.resolve(); native=args.native_code.resolve()
     # Prevent outputs from targeting either source tree or any checkpoint/log directory.
     for protected in (native,root/'logs',root/'data',root/'envs'):
@@ -146,7 +194,7 @@ def main():
         with (out/'inventory_report.md').open('a',encoding='utf-8') as f:
             f.write('\n\n## HPC file inventory\n\n'+json.dumps(checkpoint_specs,indent=2)+'\n\nAvailability is not proof of successful model loading.\n')
         save(out/'RUN_MANIFEST.json',manifest)
-        if args.command=='inventory': manifest['status']='inventory_complete'; return
+        if args.command=='inventory': manifest['status']='inventory_complete'; return 0
         if args.work is None: raise ValueError('--work must be a fresh node-local directory')
         work=args.work.resolve()
         if work==root or root in work.parents: raise ValueError('Export work directory must be node-local, outside shared source root')
@@ -154,9 +202,20 @@ def main():
         manifest['status']='running'; env=os.environ.copy(); env['PYTHONPATH']=str(native)
         env['TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD']='1'  # Trusted own FSDP files; native merger rank-0 call has no explicit flag.
         (out/'reproduce_commands.md').write_text('# Actual invocation\n\n'+repr(sys.argv)+'\n',encoding='utf-8')
+        if args.reuse_base_from:
+            reuse_base(args.reuse_base_from,out,manifest,checkpoint_specs[0],trials(protocol,prefixes,'base',out.name))
+            planned=[]
+            for c in checkpoint_specs:
+                origin=c.get('reused_from',{})
+                planned.extend([{**r,'evidence_mode':'reused' if origin else 'new',
+                    'evidence_source_output':origin.get('output',str(out))} for r in
+                    trials(protocol,prefixes,c['checkpoint_id'],origin.get('experiment_id',out.name))])
+            csv_write(out/'study_manifest.csv',planned)
+            save(out/'RUN_MANIFEST.json',manifest)
         used=set()
         for c in checkpoint_specs:
             cid=c['checkpoint_id']; target=out/cid
+            if c.get('status')=='reused_completed': used.add(cid); continue
             if cid in used:
                 c['status']='duplicate_substitution_not_rerun'; continue
             used.add(cid); target.mkdir()
@@ -168,8 +227,8 @@ def main():
                 c['source_model_fingerprints']=fingerprint(model_files)
                 exported=base if cid=='base' else work/cid
                 if cid!='base':
-                    cmd=[sys.executable,str(native/'scripts/model_merger.py'),'--backend','fsdp','--hf_model_path',str(base),
-                        '--local_dir',str(path/'actor'),'--target_dir',str(exported)]
+                    cmd=[sys.executable,str(HERE/'fsdp_export.py'),'--native-code',str(native),'--hf-model-path',str(base),
+                        '--local-dir',str(path/'actor'),'--target-dir',str(exported),'--metadata',str(target/'conversion_manifest.json')]
                     with (target/'conversion.log').open('w') as log: subprocess.run(cmd,env=env,cwd=target,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=900)
                 c['inference_model_fingerprints']=fingerprint(sorted(exported.glob('*.safetensors')))
                 if not c['inference_model_fingerprints']: raise FileNotFoundError('Export has no model weights')
@@ -183,16 +242,24 @@ def main():
                 cmd=[sys.executable,str(HERE/'runner.py'),'--spec',str(target/'invocation.json')]
                 with (target/'inference.log').open('w') as log: result=subprocess.run(cmd,env=env,cwd=target,stdout=log,stderr=subprocess.STDOUT)
                 c.update(status='finished' if result.returncode==0 else 'failed',exit_code=result.returncode)
+                if result.returncode!=0: raise RuntimeError(f'Inference exited {result.returncode}; see {target / "inference.log"}')
+                c['trial_summary']=trial_summary(target,spec['trials'])
+                if not c['trial_summary']['complete']:
+                    c['status']='partial'
+                    manifest['errors_summary'].append(dict(checkpoint=cid,trial_summary=c['trial_summary']))
             except Exception as exc:
                 c.update(status='failed',error=f'{type(exc).__name__}: {exc}'); save(target/'failure.json',c)
                 manifest['errors_summary'].append(dict(checkpoint=cid,error=c['error']))
             save(out/'RUN_MANIFEST.json',manifest)
-        manifest['status']='pilot_finished_review_per_checkpoint_and_trial_status'
+        complete=all(c.get('status') in ('finished','reused_completed') for c in checkpoint_specs)
+        manifest['status']='pilot_complete' if complete else 'pilot_partial'
+        save(out/'RUN_MANIFEST.json',manifest)
         subprocess.run([sys.executable,str(HERE/'analyze.py'),str(out)],check=True)
+        return 0 if complete else 2
     except Exception as exc:
         manifest['status']='failed'; manifest['errors_summary'].append(str(exc)); raise
     finally:
         manifest['end_time']=time.time(); save(out/'RUN_MANIFEST.json',manifest)
 
 
-if __name__=='__main__': main()
+if __name__=='__main__': sys.exit(main())

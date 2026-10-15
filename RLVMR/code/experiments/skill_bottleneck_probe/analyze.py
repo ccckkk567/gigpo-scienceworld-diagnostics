@@ -137,6 +137,10 @@ def main(root):
         "F04: failure_types_by_checkpoint.csv is the error-event table; labels overlap. F05: cases/ contains the first recorded trial per checkpoint/condition.\n\n"
         "A focus after A is only an operational B-attempt proxy; it can be an exact repeat of A. B-correct is conservatively confirmed by native completion, not an oracle target list. "
         "Ambiguous replays remain auxiliary records and never enter primary rates. A missing stable object identity cannot be upgraded to structural equivalence from strings.\n\n")
+    text+=f"Run status: `{manifest.get('status')}`.\n\n"
+    for c in manifest.get('checkpoints',[]):
+        text+=f"- {c['checkpoint_id']}: {c.get('status')}; reused evidence: {c.get('reused_from',{}).get('output','none')}.\n"
+    text+='\n'
     for r in metrics:
         text+=f"- {r['checkpoint']} {r['condition']} {r['metric']}: {r['numerator']}/{r['denominator']}, unknown={r['unknown']}.\n"
     text+='\n## Limits and next conclusion\n\n'
@@ -146,7 +150,10 @@ def main(root):
         text+='Where a denominator is zero, that bottleneck remains unresolved. This pilot does not estimate multi-seed significance or prove a credit-assignment mechanism. Review the linked error evidence before choosing an expansion.\n'
     text+=f'\nRecord-reading errors: {json.dumps(errors)}\nPlot limitation: {plot_error}\n'
     (reports/'pilot.md').write_text(text,encoding='utf-8'); (reports/'final_or_partial.md').write_text(text,encoding='utf-8')
-    print(json.dumps({'recorded_trials':len(episodes),'reports':str(reports),'read_errors':errors,'plot_error':plot_error}))
+    print(json.dumps({'run_status':manifest.get('status'),'recorded_trials':len(episodes),
+        'trial_status_counts':dict(Counter(r.get('status') for r in episodes)),
+        'checkpoint_statuses':{c['checkpoint_id']:c.get('status') for c in manifest.get('checkpoints',[])},
+        'reports':str(reports),'read_errors':errors,'plot_error':plot_error}))
 
 
 if __name__=='__main__': main(Path(sys.argv[1]))

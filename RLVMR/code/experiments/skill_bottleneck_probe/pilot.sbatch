@@ -37,10 +37,12 @@ out="$root/analysis/skill_bottleneck_probe/pilot-${SLURM_JOB_ID}-$(date -u +%Y%m
 finish() {
   result=$?
   trap - EXIT
-  if test -f "$out/RUN_MANIFEST.json"; then python "$study/analyze.py" "$out" || true; fi
+  if test -f "$out/RUN_MANIFEST.json" && ! test -f "$out/reports/pilot.md"; then python "$study/analyze.py" "$out" || true; fi
   printf 'SCI_PROBE_END exit=%s output=%s node_local_exports=%s\n' "$result" "$out" "$scratch/exports"
   exit "$result"
 }
 trap finish EXIT
 printf 'SCI_PROBE_START commit=%s output=%s\n' "$SCI_PROBE_EXPECTED_COMMIT" "$out"
-python "$study/study.py" run --root "$root" --native-code "$native" --output "$out" --work "$scratch/exports"
+reuse_args=()
+if test -n "${SCI_PROBE_REUSE_BASE_FROM:-}"; then reuse_args=(--reuse-base-from "$SCI_PROBE_REUSE_BASE_FROM"); fi
+python "$study/study.py" run --root "$root" --native-code "$native" --output "$out" --work "$scratch/exports" "${reuse_args[@]}"

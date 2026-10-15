@@ -42,3 +42,41 @@ Limitations:
 - Tests use synthetic fixtures only and are not training evidence.
 
 Local verification: python test_package.py
+
+## Final 150-update export with resume (2026-10-15)
+
+Use `package_merged.sbatch` from the existing evidence checkout. Same ioqueue,
+portable Python 3.10, 4 CPUs / 16G / one hour. No training checkout update is needed.
+The run directory for job 162461 contains `resume161254`, not `162461`; use the
+explicit run directory from its completion log, not a substring job search.
+
+Selection is inclusive: original job 161254 updates 0..110 (0 = baseline),
+resumed job 162461 updates 111..150. The original job's updates 111..120 and
+the resumed job's startup validation at 110 do not enter merged records,
+statistics, detailed groups or top-level plots. Missing resumed records are
+reported, never replaced with old-run records. All selected joins are scoped
+to source run as well as native IDs. Source JSON fields/IDs are not rewritten.
+
+`raw_snapshot/<run>/` retains each job's captured original files, including
+the superseded overlap, for provenance only. All cross-run analyses must use
+`records/` and `reanalysis/`, not concatenate raw snapshots. Original per-run
+reports and tracker databases remain under the source snapshots, not merged.
+`selection_audit.csv` counts exclusions; `update_coverage.csv` shows source
+ownership and actual counts for each kind at each update. Worker-local
+optimizer/weight_sync and lifecycle records without a reliable update stay
+in `auxiliary_records/<run>/`. Native cumulative counters restart per run.
+
+`--require-through 150` checks actor-update completion records and native
+metrics for every update 1..150. A missing update, missing metrics, or duplicate
+completion record returns a failure status AFTER preserving the archive and
+coverage report. Passing does not prove every optional field/detailed episode
+exists: field_inventory, group completeness flags and read_issues still apply.
+No checkpoint weights/optimizer tensors are read. Concurrent optimizer cleanup
+can change the checkpoint inventory; it does not remove trajectories or metrics.
+
+Stdlib SVG previews of the selected learning curves are also included, so the
+portable interpreter does not need matplotlib installed. CSVs are the plotted
+source, unknown values stay absent, and lines break at gaps/source boundaries.
+Output: `analysis/gigpo-reproduction/scienceworld/scienceworld-161254-resume162461-u150-pack<export-job>.tar.gz`.
+The final log prints the archive path and SHA256. No HPC-to-local transfer is
+performed by this job; download the resulting archive using the usual client.

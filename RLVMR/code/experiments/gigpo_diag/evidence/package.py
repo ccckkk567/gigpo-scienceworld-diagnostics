@@ -5,7 +5,9 @@ import csv
 import datetime as dt
 import gzip
 import hashlib
+import html
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -98,6 +100,12 @@ def update_of(kind, r):
     if m:
         return int(m[1]) + (m[2] == 'train_rollout')
     v = r.get('policy_version')
+    # GPU-worker lifecycle counters are process-local (often policy_version=0),
+    # not a reliable training-update coordinate. Keep them as auxiliary evidence.
+    if kind in ('optimizer', 'weight_sync', 'tracker', 'resume'):
+        return None
+    if kind == 'science_reset_observations' and isinstance(v, int):
+        return v + 1 if r.get('sample_kind') == 'train' else v
     if kind in ('advantages', 'reward_inputs', 'anchor_summaries') and isinstance(v, int):
         return v + 1
     return v
@@ -109,6 +117,60 @@ def phase(u, latest):
     return ('early','middle','late')[min(2, (u-1)*3//max(1,latest))]
 
 
+PLOTS = [('outcomes',['reference_success','strict_success']),
+         ('protocol',['format_valid_native','fallback']),
+         ('local_credit',['AE_abs','AS_abs','joint_nonzero']),
+         ('events',['event/focus_feedback','event/new_connection'])]
+
+
+def svg_curves(out, summary, segments):
+    """Portable CSV-derived previews when ioqueue has no plotting libraries."""
+    figdir=out/'figures'; figdir.mkdir(exist_ok=True)
+    for title,names in PLOTS:
+        series=[]
+        for name in names:
+            pts=sorted((int(r['period']),r['value']) for r in summary
+                       if r['scope']=='train_rollout' and r['axis']=='update'
+                       and r['task_id']=='__ALL__' and r['metric']==name
+                       and isinstance(r['value'],(int,float)) and math.isfinite(r['value']))
+            if pts:
+                series.append((name,pts))
+        if not series:
+            continue
+        xmax=max(u for _,pts in series for u,v in pts)
+        ymax=max(1e-6,max(v for _,pts in series for u,v in pts))*1.05
+        x=lambda u:70+760*(u-1)/max(1,xmax-1)
+        y=lambda v:330-260*v/ymax
+        parts=['<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430">',
+               '<rect width="900" height="430" fill="white"/>',
+               '<g font-family="sans-serif" font-size="12" fill="#263244">',
+               f'<text x="70" y="25">ScienceWorld GiGPO: {html.escape(title)} (selected updates)</text>',
+               '<path d="M70 65 V330 H840" fill="none" stroke="#263244"/>']
+        for i in range(6):
+            v=ymax*i/5
+            parts.append(f'<text x="10" y="{y(v)+4:.1f}">{v:.3g}</text>')
+        for u in sorted({1,xmax,*[s['first_update'] for s in segments if s['first_update']>0]}):
+            parts.append(f'<text x="{x(u):.1f}" y="350">{u}</text>')
+        for index,(name,pts) in enumerate(series):
+            color=('#146c94','#b54708','#6d28d9')[index%3]
+            # Break lines at run boundaries and missing updates; do not interpolate gaps.
+            for segment in segments:
+                selected=[(u,v) for u,v in pts if segment['first_update']<=u and (segment['last_update'] is None or u<=segment['last_update'])]
+                chunks=[]
+                for point in selected:
+                    if not chunks or point[0]!=chunks[-1][-1][0]+1:
+                        chunks.append([])
+                    chunks[-1].append(point)
+                for chunk in chunks:
+                    xy=' '.join(f'{x(u):.1f},{y(v):.1f}' for u,v in chunk)
+                    parts.append(f'<polyline points="{xy}" fill="none" stroke="{color}" stroke-width="1.5"/>')
+                    for u,v in chunk:
+                        parts.append(f'<circle cx="{x(u):.1f}" cy="{y(v):.1f}" r="1.5" fill="{color}"/>')
+            parts.append(f'<text x="{70+index*265}" y="385" fill="{color}">{html.escape(name)}</text>')
+        parts.append('<text x="260" y="420">Training update; lines break at source boundaries and gaps</text></g></svg>')
+        (figdir/(title+'.svg')).write_text('\n'.join(parts),encoding='utf-8')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--root', type=Path, required=True)
@@ -117,34 +179,62 @@ def main():
     ap.add_argument('--max-update', type=int, default=None)
     ap.add_argument('--expected-group-size', type=int, default=8)
     ap.add_argument('--source-mib-per-second', type=float, default=16)
+    ap.add_argument('--segment', nargs=3, action='append', metavar=('RUN_DIRECTORY', 'FIRST_UPDATE', 'LAST_UPDATE'),
+                    help='Repeat for disjoint inclusive ranges; 0 retains the original baseline')
+    ap.add_argument('--require-through', type=int, help='Report gaps in 1..N and return nonzero after preserving the package')
+    ap.add_argument('--slurm-log-root', type=Path, help='Optionally include exact ggp-scienceworld-train-JOB.out files')
     args = ap.parse_args()
-    matches = [p for p in args.root.iterdir() if p.is_dir() and args.job in p.name.split('-') and (p/'RUN_MANIFEST.json').exists()]
-    if len(matches) != 1:
-        raise SystemExit(f'Expected one run for job {args.job}, found: {matches}')
-    src = matches[0].resolve()
+    segments = []
+    if args.segment:
+        for name, lo, hi in args.segment:
+            src = (args.root/name).resolve()
+            lo, hi = int(lo), int(hi)
+            if src.parent != args.root.resolve() or not (src/'RUN_MANIFEST.json').is_file():
+                raise SystemExit(f'Not a run directory directly under root: {name}')
+            if lo < 0 or hi < lo:
+                raise SystemExit('Invalid segment range')
+            if any(not (hi < x['first_update'] or lo > x['last_update']) for x in segments):
+                raise SystemExit('Segment ranges must be disjoint; explicitly assign the overlap to the resumed run')
+            if any(x['source_run'] == str(src) for x in segments):
+                raise SystemExit('Each source run may appear only once')
+            segments.append(dict(source_run=str(src), first_update=lo, last_update=hi))
+    else:
+        matches = [p for p in args.root.iterdir() if p.is_dir() and args.job in p.name.split('-') and (p/'RUN_MANIFEST.json').exists()]
+        if len(matches) != 1:
+            raise SystemExit(f'Expected one run for job {args.job}, found: {matches}')
+        segments = [dict(source_run=str(matches[0].resolve()), first_update=0, last_update=args.max_update)]
     out = args.output.resolve()
-    if out == src or src in out.parents or out in src.parents:
-        raise SystemExit('Output must be separate from the source run')
+    for segment in segments:
+        src = Path(segment['source_run'])
+        if out == src or src in out.parents or out in src.parents:
+            raise SystemExit('Output must be separate from the source run')
     out.mkdir(parents=True, exist_ok=False)
     stamp = dt.datetime.now(dt.timezone.utc).isoformat()
     # Capture file sizes once; never follow symlinks or chase growing files.
     files = []
-    for base, dirs, names in os.walk(src, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if not (Path(base)/d).is_symlink())
-        for name in sorted(names):
-            p = Path(base)/name
-            if not p.is_symlink():
-                try:
-                    s = p.stat()
-                    files.append((p, s.st_size, s.st_mtime_ns))
-                except FileNotFoundError:
-                    pass  # File rotation during enumeration; no retry against the writer.
+    for segment in segments:
+        src = Path(segment['source_run'])
+        segment['snapshot_prefix'] = src.name if args.segment else ''
+        for base, dirs, names in os.walk(src, followlinks=False):
+            dirs[:] = sorted(d for d in dirs if not (Path(base)/d).is_symlink())
+            for name in sorted(names):
+                p = Path(base)/name
+                if not p.is_symlink():
+                    try:
+                        s = p.stat()
+                        files.append((p, s.st_size, s.st_mtime_ns, segment))
+                    except FileNotFoundError:
+                        pass  # File rotation during enumeration; no retry against the writer.
     inventories, schemas, failures = [], {}, []
     # Snapshot first. All parsing, compression and analysis below use these copies.
     snapshot = out/'raw_snapshot'
-    for p,size,mtime in files:
-        rel=p.relative_to(src)
-        inv=dict(path=str(rel),source_bytes=size,source_mtime_ns=mtime,status='indexed_only')
+    for p,size,mtime,segment in files:
+        src = Path(segment['source_run'])
+        source_rel = p.relative_to(src)
+        rel = Path(segment['snapshot_prefix'])/source_rel
+        inv=dict(path=str(rel),source_run=str(src),source_relative_path=str(source_rel),
+                 first_update=segment['first_update'],last_update=segment['last_update'],
+                 source_bytes=size,source_mtime_ns=mtime,status='indexed_only')
         inventories.append(inv)
         checkpoint='checkpoints' in rel.parts
         safe_meta=p.suffix.lower() in ('.json','.yaml','.yml','.txt','.md','.py','.sh','.sbatch')
@@ -170,28 +260,57 @@ def main():
             inv['changed_during_read']=now.st_size!=size or now.st_mtime_ns!=mtime
         except OSError:
             inv['changed_during_read']=True
-    try:
-        manifest=json.loads((snapshot/'RUN_MANIFEST.json').read_text())
-    except (OSError,ValueError) as e:
-        manifest={'manifest_unavailable':str(e)}
-        failures.append({'source':'RUN_MANIFEST.json','issues':['snapshot not parseable; original bytes retained']})
+    for segment in segments:
+        manifest_path = snapshot/segment['snapshot_prefix']/'RUN_MANIFEST.json'
+        try:
+            segment['manifest'] = json.loads(manifest_path.read_text(encoding='utf-8'))
+        except (OSError,ValueError) as e:
+            segment['manifest'] = {'manifest_unavailable':str(e)}
+            failures.append({'source':str(manifest_path),'issues':['snapshot not parseable; original bytes retained']})
+    manifest = segments[0]['manifest']
+    if args.slurm_log_root:
+        for segment in segments:
+            job = str(segment['manifest'].get('job_id',''))
+            if not job.isdigit():
+                continue
+            log = args.slurm_log_root/f'ggp-scienceworld-train-{job}.out'
+            rel = Path('slurm_logs')/log.name
+            inv = dict(path=str(rel),source_run=str(args.slurm_log_root.resolve()),
+                       source_relative_path=log.name,first_update=0,last_update=None,
+                       status='snapshot_unavailable')
+            inventories.append(inv)
+            try:
+                if log.is_symlink():
+                    raise OSError('symlink not followed')
+                stat = log.stat()
+                inv.update(source_bytes=stat.st_size,source_mtime_ns=stat.st_mtime_ns)
+                inv.update(snapshot_file(log,snapshot/rel,stat.st_size,args.source_mib_per_second*1024*1024))
+                inv['status']='fixed_length_raw_snapshot'
+                now=log.stat()
+                inv['changed_during_read']=now.st_size!=stat.st_size or now.st_mtime_ns!=stat.st_mtime_ns
+            except OSError as e:
+                inv['error']=str(e)
+                failures.append({'source':str(log),'issues':[str(e)]})
     print('SNAPSHOT_COMPLETE: source files will not be read again',flush=True)
     tmp = tempfile.TemporaryDirectory(prefix='sci-evidence-')
     db = sqlite3.connect(str(Path(tmp.name)/'records.sqlite'))
     db.execute('PRAGMA journal_mode=OFF')
-    db.execute('CREATE TABLE records(kind TEXT,u INTEGER,batch TEXT,gid TEXT,traj TEXT,sid TEXT,body TEXT,source TEXT,line INTEGER)')
+    db.execute('CREATE TABLE records(kind TEXT,u INTEGER,batch TEXT,gid TEXT,traj TEXT,sid TEXT,body TEXT,source TEXT,line INTEGER,run TEXT)')
     normalized = out/'records'
     normalized.mkdir()
     handles = {}
+    auxiliary = {}
+    auxiliary_schemas = {}
+    selection_counts = collections.Counter()
     for inv in inventories:
         rel = Path(inv['path'])
         p = snapshot/rel
         size = inv.get('copied_bytes',0)
         if inv['status']!='fixed_length_raw_snapshot':
             continue
-        if rel.parts[0] == 'diagnostics' and p.name.endswith('.jsonl.gz'):
+        if Path(inv['source_relative_path']).parts[0] == 'diagnostics' and p.name.endswith('.jsonl.gz'):
             kind = p.name.split('.pid-')[0]
-            stats = schemas.setdefault(kind, {'records':0, 'fields':{}, 'updates':[], 'sources':[], 'excluded_after_cutoff':0, 'unassigned':0})
+            stats = schemas.setdefault(kind, {'records':0, 'fields':{}, 'updates':[], 'sources':[], 'excluded_after_cutoff':0, 'excluded_before_start':0, 'unassigned':0})
             stats['sources'].append(str(rel))
             issues = []
             h = hashlib.sha256()
@@ -205,9 +324,32 @@ def main():
                     if not isinstance(u, int):
                         stats['unassigned'] += 1
                         u = None
-                    if args.max_update is not None and u is not None and u > args.max_update:
-                        stats['excluded_after_cutoff'] += 1
+                    if u is None and args.segment:
+                        key=(Path(inv['source_run']).name,kind)
+                        if key not in auxiliary:
+                            target=out/'auxiliary_records'/key[0]/(kind+'.jsonl.gz')
+                            target.parent.mkdir(parents=True,exist_ok=True)
+                            auxiliary[key]=gzip.open(target,'wb',compresslevel=1)
+                        auxiliary[key].write(raw+b'\n')
+                        aux=auxiliary_schemas.setdefault('/'.join(key), {'records':0,'fields':{}})
+                        aux['records']+=1
+                        for field_name,value in r.items():
+                            field=aux['fields'].setdefault(field_name, {'present':0,'null':0,'types':[]})
+                            field['present']+=1
+                            field['null']+=value is None
+                            if type(value).__name__ not in field['types']:
+                                field['types'].append(type(value).__name__)
+                        selection_counts[(inv['source_run'],kind,'unassigned_auxiliary')]+=1
                         continue
+                    if u is not None and u < inv['first_update']:
+                        stats['excluded_before_start'] += 1
+                        selection_counts[(inv['source_run'],kind,'excluded_before_start')]+=1
+                        continue
+                    if u is not None and ((inv['last_update'] is not None and u > inv['last_update']) or (args.max_update is not None and u > args.max_update)):
+                        stats['excluded_after_cutoff'] += 1
+                        selection_counts[(inv['source_run'],kind,'excluded_after_cutoff')]+=1
+                        continue
+                    selection_counts[(inv['source_run'],kind,'selected')]+=1
                     # Preserve original JSON bytes, no invented fields in raw records.
                     handles[kind].write(raw+b'\n')
                     h.update(raw+b'\n')
@@ -221,31 +363,37 @@ def main():
                         t = type(value).__name__
                         if t not in field['types']:
                             field['types'].append(t)
-                    db.execute('INSERT INTO records VALUES(?,?,?,?,?,?,?,?,?)', (kind,u,r.get('rollout_batch_id'),r.get('episode_group_uid'),r.get('traj_uid'),r.get('analysis_step_id'),raw.decode(),str(rel),number))
+                    db.execute('INSERT INTO records VALUES(?,?,?,?,?,?,?,?,?,?)', (kind,u,r.get('rollout_batch_id'),r.get('episode_group_uid'),r.get('traj_uid'),r.get('analysis_step_id'),raw.decode(),str(rel),number,inv['source_run']))
                 except (ValueError, UnicodeError, TypeError) as e:
                     issues.append(f'line_{number}:{type(e).__name__}')
             inv['selected_jsonl_sha256'] = h.hexdigest()
             inv['issues'] = issues
             if issues:
                 failures.append({'source':str(rel),'issues':issues})
-    for h in handles.values():
+    for h in list(handles.values()) + list(auxiliary.values()):
         h.close()
     db.commit()
-    db.execute('CREATE INDEX bykind ON records(kind,batch,gid)')
-    db.execute('CREATE INDEX bysid ON records(sid,kind)')
+    db.execute('CREATE INDEX bykind ON records(kind,run,batch,gid)')
+    db.execute('CREATE INDEX bysid ON records(run,sid,kind)')
+    db.execute('CREATE INDEX byupdate ON records(run,u,kind)')
     def rows(kind):
         for u, body in db.execute('SELECT u,body FROM records WHERE kind=? ORDER BY u,rowid',(kind,)):
             yield u,json.loads(body)
     # Full provenance per accepted record permits exact lookup in the original file.
-    table(out/'record_sources.csv', ({'kind':k,'analysis_update':u,'source':s,'source_line':n,'analysis_step_id':i} for k,u,s,n,i in db.execute('SELECT kind,u,source,line,sid FROM records')))
+    table(out/'record_sources.csv', ({'kind':k,'analysis_update':u,'source_run':run,'source':s,'source_line':n,'analysis_step_id':i} for k,u,s,n,i,run in db.execute('SELECT kind,u,source,line,sid,run FROM records')))
+    table(out/'selection_audit.csv', (dict(source_run=run,kind=kind,selection=reason,records=count) for (run,kind,reason),count in sorted(selection_counts.items())))
     for v in schemas.values():
         v['updates'].sort()
         for field in v['fields'].values():
             field['missing']=v['records']-field['present']
+    for v in auxiliary_schemas.values():
+        for field in v['fields'].values():
+            field['missing']=v['records']-field['present']
     dump(out/'field_inventory.json',schemas)
+    dump(out/'auxiliary_field_inventory.json',auxiliary_schemas)
     dump(out/'source_inventory.json',inventories)
     dump(out/'read_issues.json',failures)
-    table(out/'checkpoint_index.csv',(x for x in inventories if 'checkpoints' in Path(x['path']).parts), ['path','source_bytes','source_mtime_ns','status'])
+    table(out/'checkpoint_index.csv',(x for x in inventories if 'checkpoints' in Path(x['path']).parts), ['source_run','path','source_bytes','source_mtime_ns','status'])
     completed = [r['policy_update'] for _,r in rows('updates') if r.get('native_actor_update_returned')]
     latest = max(completed,default=0)
     completed_set=set(completed)
@@ -285,15 +433,15 @@ def main():
     # Dedup padded training rows by step ID only if all captured values agree.
     unique_adv=[]
     conflicts=0
-    for sid, in db.execute("SELECT DISTINCT sid FROM records WHERE kind='advantages' AND sid IS NOT NULL"):
-        captured=[(u,json.loads(body)) for u,body in db.execute("SELECT u,body FROM records WHERE kind='advantages' AND sid=?",(sid,))]
+    for run,sid in db.execute("SELECT DISTINCT run,sid FROM records WHERE kind='advantages' AND sid IS NOT NULL"):
+        captured=[(u,json.loads(body)) for u,body in db.execute("SELECT u,body FROM records WHERE kind='advantages' AND run=? AND sid=?",(run,sid))]
         keys=('AE','AS','joint','step_weight','actual_step_return','step_group_id')
         if len({json.dumps([r.get(k) for k in keys]) for _,r in captured})!=1:
             conflicts+=1; continue
         u,r=captured[0]
         if u not in completed_set:
             continue
-        match=db.execute("SELECT body FROM records WHERE kind='steps_numeric' AND sid=? LIMIT 1",(sid,)).fetchone()
+        match=db.execute("SELECT body FROM records WHERE kind='steps_numeric' AND run=? AND sid=? LIMIT 1",(run,sid)).fetchone()
         if not match:
             continue
         s=json.loads(match[0]); task=s.get('task_id')
@@ -301,32 +449,32 @@ def main():
             v=r.get(k)
             add('train_rollout',u,task,k+'_abs',abs(v) if v is not None else None)
             add('train_rollout',u,task,k+'_nonzero',abs(v)>1e-6 if v is not None else None,True)
-        unique_adv.append({'analysis_step_id':sid,'update':u,'task_id':task,'episode_group_uid':s.get('episode_group_uid'),'step_index':s.get('step_index'),'action_signature':s.get('action_signature'),'generic_feedback_anchor':s.get('generic_feedback_anchor'),**{k:r.get(k) for k in keys},'training_row_copies':len(captured)})
+        unique_adv.append({'source_run':run,'analysis_step_id':sid,'update':u,'task_id':task,'episode_group_uid':s.get('episode_group_uid'),'step_index':s.get('step_index'),'action_signature':s.get('action_signature'),'generic_feedback_anchor':s.get('generic_feedback_anchor'),**{k:r.get(k) for k in keys},'training_row_copies':len(captured)})
     table(out/'reanalysis'/'unique_step_advantages.csv',unique_adv)
     # Boundary differences are measured inputs, not an additive decomposition of advantages.
     reward_rows=[]
-    for sid, in db.execute("SELECT DISTINCT sid FROM records WHERE kind='reward_inputs' AND sid IS NOT NULL"):
+    for run,sid in db.execute("SELECT DISTINCT run,sid FROM records WHERE kind='reward_inputs' AND sid IS NOT NULL"):
         stages=collections.defaultdict(set)
-        for body, in db.execute("SELECT body FROM records WHERE kind='reward_inputs' AND sid=?",(sid,)):
+        for body, in db.execute("SELECT body FROM records WHERE kind='reward_inputs' AND run=? AND sid=?",(run,sid)):
             r=json.loads(body)
             stages[r.get('stage')].add((r.get('token_score_sum'),r.get('step_return')))
         before=stages.get('before_invalid_penalty',set()); after=stages.get('after_invalid_penalty',set())
         if len(before)!=1 or len(after)!=1:
-            reward_rows.append(dict(analysis_step_id=sid,status='missing_or_conflicting_boundary',token_score_delta=None,step_return_delta=None))
+            reward_rows.append(dict(source_run=run,analysis_step_id=sid,status='missing_or_conflicting_boundary',token_score_delta=None,step_return_delta=None))
             continue
         a,b=next(iter(before)),next(iter(after))
-        reward_rows.append(dict(analysis_step_id=sid,status='paired',token_score_delta=b[0]-a[0] if a[0] is not None and b[0] is not None else None,step_return_delta=b[1]-a[1] if a[1] is not None and b[1] is not None else None))
+        reward_rows.append(dict(source_run=run,analysis_step_id=sid,status='paired',token_score_delta=b[0]-a[0] if a[0] is not None and b[0] is not None else None,step_return_delta=b[1]-a[1] if a[1] is not None and b[1] is not None else None))
     table(out/'reanalysis'/'reward_boundary_deltas.csv',reward_rows)
     # Native anchor membership; padding copies do not add independent support.
     anchors=collections.defaultdict(list)
     for r in unique_adv:
-        anchors[(r['update'],r['step_group_id'])].append(r)
+        anchors[(r['source_run'],r['update'],r['step_group_id'])].append(r)
     anchor_rows=[]
-    for (u,aid),members in anchors.items():
+    for (run,u,aid),members in anchors.items():
         returns=[r['actual_step_return'] for r in members if r['actual_step_return'] is not None]
         signatures={(r['analysis_step_id'].rsplit(':',1)[0],r['action_signature']) for r in members if r['action_signature']}
         supported=sum(any(t!=r['analysis_step_id'].rsplit(':',1)[0] and a!=r['action_signature'] for t,a in signatures) for r in members if r['action_signature'])
-        anchor_rows.append(dict(update=u,step_group_id=aid,episode_group_uid=members[0]['episode_group_uid'],unique_steps=len(members),distinct_trajectories=len({r['analysis_step_id'].rsplit(':',1)[0] for r in members}),alternative_support_steps=supported,action_signature_known_steps=sum(bool(r['action_signature']) for r in members),return_min=min(returns) if returns else None,return_max=max(returns) if returns else None,steps_excluding_first=sum(r['step_index']!=0 for r in members)))
+        anchor_rows.append(dict(source_run=run,update=u,step_group_id=aid,episode_group_uid=members[0]['episode_group_uid'],unique_steps=len(members),distinct_trajectories=len({r['analysis_step_id'].rsplit(':',1)[0] for r in members}),alternative_support_steps=supported,action_signature_known_steps=sum(bool(r['action_signature']) for r in members),return_min=min(returns) if returns else None,return_max=max(returns) if returns else None,steps_excluding_first=sum(r['step_index']!=0 for r in members)))
     table(out/'reanalysis'/'anchor_groups.csv',anchor_rows)
     summary=[]
     for key,(num,den,unknown) in sorted(agg.items()):
@@ -334,29 +482,30 @@ def main():
         summary.append(dict(scope=scope,axis=axis,period=label,task_id=task,metric=metric,statistic=stat,numerator=num,denominator=den,value=num/den if den else None,unknown_count=unknown))
     table(out/'reanalysis'/'task_update_stage_metrics.csv',summary)
     metrics=[]
-    for u,r in rows('metrics'):
+    for run,u,body in db.execute("SELECT run,u,body FROM records WHERE kind='metrics' ORDER BY u,rowid"):
+        r=json.loads(body)
         for k,v in r.get('metrics',{}).items():
-            metrics.append(dict(update=u,key=k,value=json.dumps(v)))
+            metrics.append(dict(source_run=run,update=u,key=k,value=json.dumps(v)))
     table(out/'reanalysis'/'native_metrics.csv',metrics)
     # Export every preselected training group, including partial ones clearly flagged.
     group_index=[]
-    pairs=db.execute("SELECT DISTINCT batch,gid FROM records WHERE kind='group_resets'").fetchall()
-    for batch,gid in pairs:
-        reset=[json.loads(x[0]) for x in db.execute("SELECT body FROM records WHERE kind='group_resets' AND batch=? AND gid=?",(batch,gid))]
+    pairs=db.execute("SELECT DISTINCT run,batch,gid FROM records WHERE kind='group_resets'").fetchall()
+    for run,batch,gid in pairs:
+        reset=[json.loads(x[0]) for x in db.execute("SELECT body FROM records WHERE kind='group_resets' AND run=? AND batch=? AND gid=?",(run,batch,gid))]
         if not reset or reset[0].get('sample_kind')!='train_rollout':
             continue
-        uid=hashlib.sha256((batch+'|'+gid).encode()).hexdigest()[:20]
-        es=[json.loads(x[0]) for x in db.execute("SELECT body FROM records WHERE kind='episodes' AND batch=? AND gid=?",(batch,gid))]
+        uid=hashlib.sha256((run+'|'+batch+'|'+gid).encode()).hexdigest()[:20]
+        es=[json.loads(x[0]) for x in db.execute("SELECT body FROM records WHERE kind='episodes' AND run=? AND batch=? AND gid=?",(run,batch,gid))]
         selected=any(r.get('detail_selected') for r in reset)
-        details=db.execute("SELECT COUNT(DISTINCT sid) FROM records WHERE kind='detailed_steps' AND batch=? AND gid=?",(batch,gid)).fetchone()[0]
-        counts=dict(db.execute("SELECT traj,COUNT(DISTINCT sid) FROM records WHERE kind='detailed_steps' AND batch=? AND gid=? GROUP BY traj",(batch,gid)))
+        details=db.execute("SELECT COUNT(DISTINCT sid) FROM records WHERE kind='detailed_steps' AND run=? AND batch=? AND gid=?",(run,batch,gid)).fetchone()[0]
+        counts=dict(db.execute("SELECT traj,COUNT(DISTINCT sid) FROM records WHERE kind='detailed_steps' AND run=? AND batch=? AND gid=? GROUP BY traj",(run,batch,gid)))
         same_trajs={r.get('traj_uid') for r in reset}=={r.get('traj_uid') for r in es}
         unique_episodes=len({e.get('traj_uid') for e in es})==args.expected_group_size
         episode_complete=len(reset)==len(es)==args.expected_group_size and unique_episodes and same_trajs
         complete=(selected and episode_complete and all(counts.get(e.get('traj_uid'),0)==e.get('active_steps') for e in es))
         u=update_of('group_resets',reset[0])
         strict=[e.get('strict_success') for e in es]; ref=[e.get('reference_success') for e in es]
-        entry=dict(update=u,batch=batch,episode_group_uid=gid,task_id=reset[0].get('task_id'),reset_count=len(reset),episode_count=len(es),detail_steps=details,detail_selected=selected,complete_episode_group=episode_complete,complete_text_group=bool(complete),strict_all_fail=(not any(strict)) if episode_complete and all(isinstance(x,bool) for x in strict) else None,reference_mixed=(any(ref) and not all(ref)) if episode_complete and all(isinstance(x,bool) for x in ref) else None,update_completed=u in completed_set,path='detailed_groups/'+uid if selected else '')
+        entry=dict(source_run=run,update=u,batch=batch,episode_group_uid=gid,task_id=reset[0].get('task_id'),reset_count=len(reset),episode_count=len(es),detail_steps=details,detail_selected=selected,complete_episode_group=episode_complete,complete_text_group=bool(complete),strict_all_fail=(not any(strict)) if episode_complete and all(isinstance(x,bool) for x in strict) else None,reference_mixed=(any(ref) and not all(ref)) if episode_complete and all(isinstance(x,bool) for x in ref) else None,update_completed=u in completed_set,path='detailed_groups/'+uid if selected else '')
         group_index.append(entry)
         if not selected:
             continue
@@ -364,10 +513,10 @@ def main():
         dump(dest/'group_status.json',entry)
         for kind in ('group_resets','episodes','steps_numeric','detailed_steps'):
             with gzip.open(dest/(kind+'.jsonl.gz'),'wt',encoding='utf-8',compresslevel=1) as f:
-                for body, in db.execute('SELECT body FROM records WHERE kind=? AND batch=? AND gid=? ORDER BY traj,CAST(json_extract(body,\'$.step_index\') AS INTEGER)',(kind,batch,gid)):
+                for body, in db.execute('SELECT body FROM records WHERE kind=? AND run=? AND batch=? AND gid=? ORDER BY traj,CAST(json_extract(body,\'$.step_index\') AS INTEGER)',(kind,run,batch,gid)):
                     f.write(body+'\n')
         with gzip.open(dest/'advantages_and_rewards.jsonl.gz','wt',encoding='utf-8',compresslevel=1) as f:
-            for kind,body in db.execute("SELECT a.kind,a.body FROM records a WHERE a.kind IN ('advantages','reward_inputs') AND a.sid IN (SELECT sid FROM records WHERE kind='steps_numeric' AND batch=? AND gid=?)",(batch,gid)):
+            for kind,body in db.execute("SELECT a.kind,a.body FROM records a WHERE a.run=? AND a.kind IN ('advantages','reward_inputs') AND a.sid IN (SELECT sid FROM records WHERE kind='steps_numeric' AND run=? AND batch=? AND gid=?)",(run,run,batch,gid)):
                 f.write(json.dumps({'record_kind':kind,'record':json.loads(body)},ensure_ascii=False)+'\n')
     table(out/'reanalysis'/'episode_group_index.csv',group_index)
     figure_status='not generated'
@@ -391,11 +540,34 @@ def main():
     except ImportError as e:
         figure_status='unavailable: '+str(e)
     metrics_updates=sorted({u for u,_ in rows('metrics') if u is not None})
-    info=dict(source_run=str(src),source_manifest=manifest,snapshot_started_utc=stamp,max_update_requested=args.max_update,latest_completed_update_in_export=latest,completed_updates=sorted(completed_set),metrics_updates=metrics_updates,completed_updates_missing_metrics=sorted(completed_set-set(metrics_updates)),job_id=args.job,expected_group_size=args.expected_group_size,advantage_conflicting_step_ids=conflicts,figures=figure_status,source_file_count=len(files),export_record_count=sum(v['records'] for v in schemas.values()),complete_text_groups=sum(x['complete_text_group'] for x in group_index),partial_text_groups=sum(x['detail_selected'] and not x['complete_text_group'] for x in group_index),tracker_sources=[x['path'] for x in inventories if Path(x['path']).parts[0] in ('swanlog','wandb')])
+    coverage=[]
+    for segment in segments:
+        lo,hi=segment['first_update'],segment['last_update']
+        for u in range(max(0,lo), (hi if hi is not None else latest)+1):
+            counts=dict(db.execute('SELECT kind,COUNT(*) FROM records WHERE run=? AND u=? GROUP BY kind',(segment['source_run'],u)))
+            coverage.append(dict(update=u,source_run=segment['source_run'],job_id=segment['manifest'].get('job_id'),
+                                 **{kind:counts.get(kind,0) for kind in ('updates','metrics','episodes','steps_numeric','detailed_steps','group_resets','advantages','reward_inputs','anchor_summaries','science_reset_observations','checkpoints')}))
+    table(out/'update_coverage.csv',coverage)
+    requested=set(range(1,args.require_through+1)) if args.require_through else set()
+    missing=sorted(requested-completed_set)
+    missing_metrics=sorted(requested-set(metrics_updates))
+    duplicates=sorted(u for u,n in collections.Counter(completed).items() if n>1)
+    coverage_ok=not missing and not missing_metrics and not duplicates
+    info=dict(source_run=segments[0]['source_run'] if not args.segment else None,source_manifest=manifest if not args.segment else None,
+              segments=segments,selection_policy='disjoint source ranges; no fallback to replaced updates' if args.segment else 'single run',
+              required_through=args.require_through,missing_required_updates=missing,missing_required_metrics=missing_metrics,
+              duplicate_update_completions=duplicates,coverage_status='complete' if args.require_through and coverage_ok else ('incomplete' if args.require_through else 'not_required'),
+              snapshot_started_utc=stamp,max_update_requested=args.max_update,latest_completed_update_in_export=latest,completed_updates=sorted(completed_set),metrics_updates=metrics_updates,completed_updates_missing_metrics=sorted(completed_set-set(metrics_updates)),job_id=args.job if not args.segment else None,expected_group_size=args.expected_group_size,advantage_conflicting_step_ids=conflicts,figures=figure_status,source_file_count=len(files),export_record_count=sum(v['records'] for v in schemas.values()),complete_text_groups=sum(x['complete_text_group'] for x in group_index),partial_text_groups=sum(x['detail_selected'] and not x['complete_text_group'] for x in group_index),tracker_sources=[x['path'] for x in inventories if Path(x['source_relative_path']).parts[0] in ('swanlog','wandb')])
+    if args.segment:
+        svg_curves(out,summary,segments)
+        info['figures'] += '; portable SVG curves generated from selected reanalysis CSV'
+    info['exporter_sha256']=hash_file(Path(__file__))
+    info['source_file_count']=len(inventories)
+    (out/'exporter_package.py').write_bytes(Path(__file__).read_bytes())
     dump(out/'PACKAGE_MANIFEST.json',info)
     report=f'''# ScienceWorld evidence snapshot: latest completed update {latest}
 
-Source: `{src}`. Commit: `{manifest.get('code_commit')}`.
+Sources and commits: see `PACKAGE_MANIFEST.json` / segments.
 Latest completed update captured: **{latest}**. No training or environment execution was performed.
 Complete selected text groups: {info['complete_text_groups']}; selected partial groups: {info['partial_text_groups']}.
 
@@ -404,12 +576,16 @@ Complete selected text groups: {info['complete_text_groups']}; selected partial 
 `reanalysis/task_update_stage_metrics.csv`, `records/`, `detailed_groups/`.
 Original JSON records are retained without changing their fields; source line references are in `record_sources.csv`.
 Raw sources were opened read-only and copied once at a limited rate. All further work used raw_snapshot copies. Raw files and logs retain the entire captured prefix; optional record filtering applies only to records/.
+For merged exports, `records/`, `detailed_groups/`, all `reanalysis/` tables and top-level figures use ONLY the selected source ranges. `raw_snapshot/` also retains superseded old-run records and resume-start validation for audit, not for combined statistics. Never concatenate raw diagnostic files to reconstruct the selected history.
+Exact segment ownership is in `update_coverage.csv`; exclusions and unassigned counts are in `selection_audit.csv`. No old-run record is substituted when the selected resume record is missing.
+Records without a reliable update coordinate are kept by source in `auxiliary_records/`, not assigned an invented step. In particular optimizer/weight_sync counters are worker-local and their policy_version can remain zero.
 Source file sizes were frozen before reading. This is not an atomic cross-file snapshot.
 Incomplete compressed tails and changed files are disclosed; absence is never success or zero.
 
 ## Sampling and update rules
 All available light records are exported. Detailed trajectories follow the existing preselected first group and fixed snapshot policy, never outcome selection.
 Training rollout policy version v feeds update v+1; evaluation belongs to v. Original policy_version is retained.
+Science reset observations labelled train map to v+1, eval maps to v. Native reset_cumulative metrics remain process-local and restart in the resumed run; they must not be interpreted as monotonically accumulated counts for all 150 steps.
 Only completed updates enter training aggregate tables. Reference evaluation is separate; no holdout detailed case bundles are generated.
 Completed updates with missing native metrics: {info['completed_updates_missing_metrics']}. Completed updates, finished episodes, full text groups and checkpoint availability are separate coverage checks.
 Stages: three equal-width update intervals over 1 through {latest}, using floor((update-1)*3/latest). Counts and unknowns accompany means/rates.
@@ -424,7 +600,8 @@ Native anchor_summaries, reward_inputs, science_reset_observations and checkpoin
 World-state equivalence is unverified. No extra environment queries/replays were made.
 W&B/SwanLab local files are copied if present, excluding credential-named files and weights. Opaque tracker databases may represent an active prefix, not a transactionally consistent database. Local metrics/tracker records are primary evidence; no remote tracker history was fetched.
 Checkpoint weights are not opened or copied. Paths/sizes and small sidecars are provided; directory existence alone does not prove a resumable checkpoint.
-Figures: {figure_status}.
+Figures: {info['figures']}.
+Required update coverage: {info['coverage_status']}; missing updates: {missing}; missing metrics: {missing_metrics}; duplicate completion records: {duplicates}. This check does not certify all detailed trajectories or all planned fields exist.
 
 ## Next analysis
 Compare format, strict/reference completion and observed connection rates within tasks and periods using the provided denominators.
@@ -445,6 +622,8 @@ These are descriptive single-run observations, not proof of a GiGPO-specific cau
     with tarfile.open(archive,'w:gz',compresslevel=1) as tar:
         tar.add(out,arcname=out.name)
     print(json.dumps({'archive':str(archive),'sha256':hash_file(archive),**info},ensure_ascii=False,indent=2))
+    if args.require_through and not coverage_ok:
+        raise SystemExit('Package preserved, but required update/metrics coverage is incomplete; inspect update_coverage.csv')
 
 
 def hash_file(path):

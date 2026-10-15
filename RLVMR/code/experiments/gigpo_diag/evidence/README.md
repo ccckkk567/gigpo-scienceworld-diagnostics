@@ -80,3 +80,43 @@ source, unknown values stay absent, and lines break at gaps/source boundaries.
 Output: `analysis/gigpo-reproduction/scienceworld/scienceworld-161254-resume162461-u150-pack<export-job>.tar.gz`.
 The final log prints the archive path and SHA256. No HPC-to-local transfer is
 performed by this job; download the resulting archive using the usual client.
+
+## Public checkpoint archive and cleanup (2026-10-15)
+
+`archive_checkpoints.sbatch` runs on ioqueue (2 CPUs, 4G, 4 hours, no GPU).
+It uses the existing portable Python 3.10 to create a separate transfer venv,
+pinned to huggingface-hub 0.36.2. Xet/hf_transfer acceleration is disabled for
+older ioqueue CPUs. The existing `dep-prep-credentials.env` supplies HF_TOKEN;
+no credential value is printed or uploaded. The token must belong to Fyvoid
+and permit repository writes. Auth/visibility failures stop the job.
+
+Scope is exactly ScienceWorld runs 161254 and 162461 listed in the script.
+Destination is the public model repository
+`Fyvoid/scienceworld-gigpo-qwen2.5-1.5b-checkpoints`. Checkpoints are archived
+in their native layout, including previously optimizer-pruned and partial
+historical directories. Missing required resume shards are recorded explicitly.
+Latest complete step 150 is uploaded first and retained locally. All its
+model/optimizer/extra-state shards and data.pt must exist and remain unchanged.
+No other environment, source code, training metrics or trajectory is deleted.
+
+Every checkpoint is hashed locally and uploaded only where remote paths are
+absent; conflicting remote files stop the job. Public, anonymous metadata at
+the exact commit must match every file (LFS SHA256 or Git blob SHA1 plus size).
+A public per-checkpoint manifest and local durable receipt precede deletion.
+Only inventoried unchanged regular files are unlinked; empty old checkpoint
+directories are removed afterward. Symlinks, path escapes, changed files,
+newer checkpoint steps or missing retained shards stop cleanup. Structural
+completeness does not imply a tensor deserialization test was performed.
+
+Persistent state: `analysis/checkpoint-hf/scienceworld-u150/` (inventory,
+content hashes, pinned commit receipts, per-file delete audit and result).
+Keep this directory. Resubmit the same job after an interruption; it verifies
+already uploaded files and can continue after a partially completed cleanup.
+Data removed locally remains addressable by the recorded Hub commit. No
+additional full copy of the checkpoints is staged on HPC disk. Historical run
+checkpoint pointers remain in place and can refer to now-archived directories.
+
+Submit from the existing evidence tool checkout with
+`sbatch archive_checkpoints.sbatch`. Log: `sci-ckpt-hf-<job>.log` in that directory.
+Tests: `python -m unittest test_archive_checkpoints -v` (synthetic local Hub
+fixtures; actual HPC transfer and free-space results are confirmed by job logs).

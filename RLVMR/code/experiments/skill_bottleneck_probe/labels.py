@@ -3,6 +3,15 @@ TASK = 'lifespan-longest-lived-then-shortest-lived'
 VERSION = 'lifespan-ordered-focus-v1'
 HINT = ('According to the previous environment feedback, the first subgoal of the original task '
         'has been completed. Continue with the remaining part of the original task.')
+DIRECT_B_HINT = ('According to the previous environment feedback, the first subgoal of the original task '
+                 'has been completed. Your current objective is to find and focus on the animal with the shortest life span.')
+
+
+def condition_hint(condition, protocol):
+    if condition == 'H': return protocol['stage_hint']
+    if condition == 'D': return protocol['direct_B_hint']
+    if condition in ('N', 'P'): return None
+    raise ValueError(f'Unknown study condition: {condition}')
 
 
 def transition(action, feedback, before, after, done, already_a=False, a_action=None):

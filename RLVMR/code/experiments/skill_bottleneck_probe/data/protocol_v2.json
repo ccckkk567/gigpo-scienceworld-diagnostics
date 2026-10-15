@@ -1,0 +1,64 @@
+{
+  "protocol_version": "skill-bottleneck-exp2-v2",
+  "task_id": "lifespan-longest-lived-then-shortest-lived",
+  "task_num": 18,
+  "task_num_source": "original native worker load receipts in complete historical group resets",
+  "natural_variations": [
+    0,
+    40,
+    50,
+    55
+  ],
+  "reserve_variations": [],
+  "variation_selection": "Exp2 preregistered same variation set as historical prefixes; no outcome-based replacement",
+  "sampling_seeds": [
+    20261015,
+    20261016,
+    20261017
+  ],
+  "max_policy_steps": 30,
+  "env_step_limit": 100,
+  "simplifications": "easy",
+  "dataset_role": "train_diagnostic",
+  "checkpoint_ids": [
+    "u110",
+    "u150"
+  ],
+  "temperature": 0.4,
+  "top_p": 1.0,
+  "top_k": -1,
+  "max_response_tokens": 1024,
+  "max_prompt_tokens": 6000,
+  "stage_hint": "According to the previous environment feedback, the first subgoal of the original task has been completed. Continue with the remaining part of the original task.",
+  "label_version": "lifespan-ordered-focus-v1",
+  "primary_prefixes": [
+    "48959b57b45b8fb9",
+    "1d7c46c19a7de795",
+    "ba8d7dd0bae49fc0",
+    "5fc57e0133a566e6"
+  ],
+  "reserve_prefixes": [],
+  "paired_primary_quality": [
+    "verified_match"
+  ],
+  "no_weight_or_optimizer_writes": true,
+  "hint_placement": "append to original user content on each H continuation decision only",
+  "natural_reset_seed_rule": "20261015 + variation_id; shared across checkpoints and samples",
+  "generation_seed_rule": "sample_seed + 1009 * absolute_policy_step_index",
+  "resource_adaptation": "one GPU, tensor_parallel_size=1, eager inference, sequential trials",
+  "direct_B_hint": "According to the previous environment feedback, the first subgoal of the original task has been completed. Your current objective is to find and focus on the animal with the shortest life span.",
+  "historical_conditions": [
+    "P",
+    "H",
+    "D"
+  ],
+  "onpolicy_branch_seeds": [
+    20261115,
+    20261116
+  ],
+  "onpolicy_max_prefixes": 4,
+  "onpolicy_u110_max_prefixes": 2,
+  "core_target_trials": 96,
+  "branch_trial_cap": 16,
+  "stop_rule": "One pass through available core trials and conditional branches; no automatic extra seeds, prompts or checkpoints"
+}

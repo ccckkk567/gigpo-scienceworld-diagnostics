@@ -8,7 +8,7 @@ import time
 import traceback
 import zipfile
 from pathlib import Path
-from labels import transition, VERSION
+from labels import transition, VERSION, condition_hint
 from replay import compare, digest
 from native import manager, Renderer
 
@@ -90,6 +90,15 @@ def trial(spec, protocol, prefix, renderer, llm, out, labels_verified):
                 task_phase_after='unknown' if label_unknown else ('complete' if b else ('post_A' if a else 'pre_A')),
                 generation=generation,**lab)
             append(out/'steps.jsonl.gz',r); records.append(r); obs=next_obs; info=new_info
+            if spec.get('exp2') and spec['condition']=='N' and lab['A_transition_event'] and not done:
+                # Pure rendering of the next original input; no extra JVM call or action.
+                try:
+                    from exp2_support import natural_prefix
+                    boundary_prompt,boundary_ids=renderer.render(obs)
+                    candidate=natural_prefix(spec,records,reset_info,boundary_prompt,boundary_ids,protocol)
+                    if candidate: append(out/'natural_prefix_candidates.jsonl.gz',candidate)
+                except Exception as exc:
+                    append(out/'prefix_capture_errors.jsonl',dict(trial_id=spec['trial_id'],error=f'{type(exc).__name__}: {exc}'))
 
         if prefix:
             for old in prefix['source_steps']:
@@ -107,7 +116,7 @@ def trial(spec, protocol, prefix, renderer, llm, out, labels_verified):
                 episode.update(status='replay_blocked',termination_reason=audit['state_match_quality'])
                 return
         for index in range(len(records),protocol['max_policy_steps']):
-            hint=protocol['stage_hint'] if spec['condition']=='H' else None
+            hint=condition_hint(spec['condition'],protocol)
             prompt,ids=renderer.render(obs,hint)
             seed=spec['sample_seed']+1009*index
             params=SamplingParams(temperature=protocol['temperature'],top_p=protocol['top_p'],top_k=protocol['top_k'],
@@ -155,6 +164,9 @@ def trial(spec, protocol, prefix, renderer, llm, out, labels_verified):
             state_unverified=prefix is not None and episode['state_match_quality']!='verified_match',label_unknown=label_unknown,
             first_B_attempt_step=next((r['step_index'] for r in post if r['B_attempted']),None),
             B_first_continuation_action_correct=(post[0]['B_correct_action'] if post else None))
+        if spec.get('exp2'):
+            from exp2_support import enrich
+            episode.update(enrich(episode,records))
         append(out/'episodes.jsonl.gz',episode)
         print(json.dumps({k:episode.get(k) for k in ('trial_id','status','A_reached','B_confirmed_completed','state_match_quality','error')}),flush=True)
 
@@ -178,9 +190,13 @@ def main():
         llm=LLM(**config)
         manifest['actual_loaded_model_path']=llm.llm_engine.model_config.model
         manifest.update(checkpoint_load_status='loaded',status='running'); write(out/'run_manifest.json',manifest)
-        prefixes={p['prefix_id']:p for p in spec['prefixes']}
-        for item in spec['trials']:
-            trial(item,protocol,prefixes.get(item['prefix_id']),renderer,llm,out,identity['label_semantics_verified'])
+        if spec.get('exp2'):
+            from exp2_runtime import run_trials
+            run_trials(spec,renderer,llm,out,identity,manifest,trial)
+        else:
+            prefixes={p['prefix_id']:p for p in spec['prefixes']}
+            for item in spec['trials']:
+                trial(item,protocol,prefixes.get(item['prefix_id']),renderer,llm,out,identity['label_semantics_verified'])
         manifest['status']='finished'
     except Exception as exc:
         manifest.update(status='failed',error=f'{type(exc).__name__}: {exc}',traceback=traceback.format_exc())

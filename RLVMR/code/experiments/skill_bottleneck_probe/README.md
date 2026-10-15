@@ -2,7 +2,47 @@
 
 Branch: `codex/scienceworld-skill-bottleneck-probe`, based on latest experiment commit
 `7972a6a69dbca96099c7975ab82ab265077ea003`. Original experiment branch is unchanged.
-This directory implements the 2026-10-15 v1 study plan. No new training, reward changes, or checkpoint deletion.
+This directory implements the 2026-10-15 Pilot and Exp2 v2 study plans. No new training, reward changes, or checkpoint deletion.
+
+## Exp2 v2 (current experiment)
+
+Keep this existing experiment branch and tools checkout. The frozen specification is
+`PROTOCOL_V2.md`; exact differences from Pilot 163396 are in `CONFIG_DIFF_V2.md`.
+Pilot 163396 completed 64 execution trials across base/u50/u110/u150. Its small results
+motivate this fixed follow-up; they do not establish a general skill-integration mechanism.
+
+Exp2 uses only u110 and u150, four historical prefixes (variations 40/55/50/0), three
+fixed seeds and P/H/D, plus N on the same four variations: 96 core records. Complete,
+compatible Pilot P/H and N records may supply at most 20 of them. New D states the
+remaining shortest-life-span objective without naming an answer. Natural trajectories
+can trigger up to 16 additional P/D branch trials under the preregistered selection rule.
+
+Submit from this directory on HPC after syncing the pinned experiment commit:
+
+```bash
+sbatch --export="ALL,SCI_PROBE_EXPECTED_COMMIT=$(git rev-parse HEAD),SCI_EXP2_RESUME_FROM=" exp2.sbatch
+```
+
+The request remains testqueue, 1 GPU, 8 CPUs, 64G RAM and 2 hours, as in the successful
+Pilot. Outputs go to `$base/analysis/skill_bottleneck_probe/scienceworld-skill-bottleneck-exp2-JOB-TIMESTAMP/`;
+the log is `$base/logs/sci-skill-exp2-JOB.out`. The first var40 seed P/H/D supplies the
+in-job smoke; D task success is not required. No extra submission is needed for smoke.
+
+Core raw evidence lives in `u110/trials/TRIAL_ID/` and `u150/trials/TRIAL_ID/`.
+Use `postA_by_prefix.csv`, `P_H_D_matched.csv`, `natural_by_checkpoint.csv`,
+`onpolicy_branch_results.csv`, and `reports/final_or_partial.md` for the initial review.
+`steps_index.csv` links every full prompt, response, executed action and native feedback.
+Imported Pilot rows keep their original run IDs; separate evidence manifests record reuse.
+
+If interrupted, explicitly resubmit the same code with `SCI_EXP2_RESUME_FROM` set to the
+old Exp2 output. A new output imports completed compatible trials; the source stays read-only.
+Partial or unavailable checkpoint/replay evidence remains visible, with unknown, excluded
+and not-run counts; no nearest-model substitution or automatic extra sampling occurs.
+`exp2_complete` means the planned execution finished, not that tasks succeeded.
+`exp2_partial`/exit 2 is an inspectable delivery, not a request to automatically rerun.
+
+Local checks use synthetic environments/model responses and test the production trial loop,
+reuse and partial failures. They do not replace actual HPC checkpoint loading and JVM smoke.
 
 ## What has actually run
 

@@ -11,6 +11,12 @@ and 10 full-text candidate prefixes from the deduplicated evidence package. See 
 No local GPU checkpoint inference or actual ScienceWorld study rollout has run. HPC execution is the next step.
 The model-file availability, merge and replay quality reported by the pilot must be inspected before research conclusions.
 
+Pilot job 163357 (commit 37189d9) stopped during inventory with zero study episodes. Its preparation incorrectly
+used position 22 in documentation `tasks.json` as a native routing index. The native JVM sorts task names;
+the original training load receipts consistently record index 18 for this task. Protocol `skill-bottleneck-v1.1-routing`
+uses those receipts and validates the frozen natural/prefix variations against the real L0 training pool during
+preparation and inventory. Task name, selected variations/prefixes, sampling and labels are unchanged.
+
 ## Frozen pilot
 
 - Checkpoints: base, u50, u110, u150; unavailable checkpoints use nearest eligible lineage point with a recorded reason.

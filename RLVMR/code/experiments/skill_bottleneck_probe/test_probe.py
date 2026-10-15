@@ -8,13 +8,37 @@ from unittest.mock import patch
 from types import SimpleNamespace
 from labels import transition
 from replay import compare, paired_eligible
-from study import select, trials
+from study import select, trials, validate_study_pool
+from prepare import source_load_receipt
 from analyze import ratio
 
 HERE=Path(__file__).parent
 
 
 class ProbeTests(unittest.TestCase):
+    def test_historical_native_task_index_and_real_training_pool(self):
+        protocol=json.loads((HERE/'data/protocol.json').read_text())
+        prefixes=[json.loads(s) for s in (HERE/'data/prefixes.jsonl').read_text(encoding='utf-8').splitlines()]
+        pool_path=HERE.parents[1]/'agent_system/environments/env_package/sciworld/variations_idx/L0_idx.json'
+        pool=json.loads(pool_path.read_text())['train']
+        self.assertEqual(protocol['task_num'],18)
+        validate_study_pool(protocol,prefixes,pool)
+        for p in prefixes:
+            self.assertEqual(p['source_load_receipt']['task_id'],18)
+            self.assertIn([18,p['variation_id']],pool)
+        with self.assertRaisesRegex(ValueError,'recorded task_num=18'):
+            validate_study_pool({**protocol,'task_num':22},prefixes,pool)
+        with self.assertRaisesRegex(ValueError,'999999'):
+            validate_study_pool({**protocol,'natural_variations':[999999]},prefixes,pool)
+
+    def test_receipt_binds_source_episode_task_variation_seed(self):
+        p,_,_=self.fixture()
+        episode=dict(task_id=p['task_id'],variation_id=p['variation_id'],reset_seed=p['reset_seed'],traj_uid=p['source_trajectory_id'])
+        reset={'reset_info':{'task_num':p['task_num'],'load_receipt':p['source_load_receipt']}}
+        self.assertEqual(source_load_receipt(episode,reset)['task_id'],18)
+        with self.assertRaisesRegex(ValueError,'disagrees'):
+            source_load_receipt({**episode,'variation_id':999999},reset)
+
     def test_stage_requires_native_event_not_score_or_claim(self):
         self.assertFalse(transition('look around','I completed the first goal',33,83,False)['A_transition_event'])
         self.assertFalse(transition('go to outside','You move to outside',0,33,False)['A_transition_event'])

@@ -1,6 +1,6 @@
 # Local evidence inventory (not an HPC execution report)
 
-Task: `lifespan-longest-lived-then-shortest-lived`. The merged mainline has 408 target episodes, 58 evidence-supported A events, and 58 linked historical advantage records. 10 prefixes have contiguous full text through A and the next decision input.
+Task: `lifespan-longest-lived-then-shortest-lived`, native routing index 18 from original load receipts. The merged mainline has 408 target episodes, 58 evidence-supported A events, and 58 linked historical advantage records. 10 prefixes have contiguous full text through A and the next decision input.
 
 Lineage: job 161254 updates 1–110; resumed job 162461 updates 111–150. Updates beyond 110 from the abandoned original branch of training are excluded.
 

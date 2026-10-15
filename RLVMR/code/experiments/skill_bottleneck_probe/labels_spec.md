@@ -1,6 +1,8 @@
 # Evidence-limited task labels, v1
 
-Scope: `lifespan-longest-lived-then-shortest-lived`, native task number 22, easy simplifications.
+Scope: `lifespan-longest-lived-then-shortest-lived`, native task number 18, easy simplifications.
+The number is from original worker load receipts and is checked against the live JVM task list.
+The task's position 22 in documentation `tasks.json` is not its native routing index.
 Source: locked TaskLifeSpan.scala, GoalSequence and GoalFind (training commit a776c6c).
 The runtime compares the installed jar's corresponding class hashes with the reviewed jar.
 If they differ, rollout execution can continue, but A/B labels are unknown; native completion is still recorded.

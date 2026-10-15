@@ -68,6 +68,20 @@ def select(requested, inventory):
         'substitution_reason':None if row['step']==target else 'requested point absent/incomplete; nearest eligible lineage checkpoint by step (lower breaks ties)'}
 
 
+def validate_study_pool(protocol, prefixes, pool):
+    task_num=protocol['task_num']; task_name=protocol['task_id']
+    for p in prefixes:
+        receipt=p.get('source_load_receipt',{})
+        expected=dict(task_id=task_num,task_name=task_name,variation_id=p['variation_id'],
+                      reset_seed=p['reset_seed'],simplifications=protocol['simplifications'],load_reset_returned=True)
+        if p.get('task_num')!=task_num or p['task_id']!=task_name or any(receipt.get(k)!=v for k,v in expected.items()):
+            raise ValueError(f"Study routing disagrees with original load receipt for prefix {p['prefix_id']}: "
+                             f"requested task_num={task_num}, recorded task_num={receipt.get('task_id')}")
+    chosen=protocol['natural_variations']+protocol.get('reserve_variations',[])+[p['variation_id'] for p in prefixes]
+    missing=sorted({v for v in chosen if [task_num,v] not in pool})
+    if missing: raise ValueError(f'Study task_num={task_num} ({task_name}) variations outside original train pool: {missing}')
+
+
 def trials(protocol, prefixes, checkpoint, run_id):
     result=[]
     for v in protocol['natural_variations']:
@@ -122,8 +136,7 @@ def main():
         manifest['source_sha256_lf']=sources
         if sources!=identity['source_sha256_lf']: raise ValueError('Native source differs from locked training semantics; review this study configuration')
         pool=json.loads((native/'agent_system/environments/env_package/sciworld/variations_idx/L0_idx.json').read_text())['train']
-        chosen=protocol['natural_variations']+[p['variation_id'] for p in prefixes]
-        if any([protocol['task_num'],v] not in pool for v in chosen): raise ValueError('Study variation outside original train pool')
+        validate_study_pool(protocol,prefixes,pool)
         inv=checkpoint_inventory(root); csv_write(out/'checkpoint_inventory.csv',inv)
         base=root/'data/models/Qwen2.5-1.5B-Instruct-989aa798'
         checkpoint_specs=[dict(checkpoint_id='base',requested_checkpoint='base',path=str(base),origin_run='pretrained')]

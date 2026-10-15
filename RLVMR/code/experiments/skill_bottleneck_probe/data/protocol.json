@@ -1,7 +1,8 @@
 {
-  "protocol_version": "skill-bottleneck-v1",
+  "protocol_version": "skill-bottleneck-v1.1-routing",
   "task_id": "lifespan-longest-lived-then-shortest-lived",
-  "task_num": 22,
+  "task_num": 18,
+  "task_num_source": "original native worker load receipts in complete historical group resets",
   "natural_variations": [
     0,
     1,

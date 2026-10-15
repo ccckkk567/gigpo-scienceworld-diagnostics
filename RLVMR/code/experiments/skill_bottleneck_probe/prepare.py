@@ -27,6 +27,18 @@ def dump_csv(path, records):
         w.writeheader(); w.writerows(records)
 
 
+def source_load_receipt(episode, reset):
+    """The JVM's routing index is recorded by the original worker, not tasks.json order."""
+    info=reset['reset_info']; receipt=info['load_receipt']
+    expected=dict(task_name=episode['task_id'],variation_id=episode['variation_id'],
+                  reset_seed=episode['reset_seed'],simplifications='easy',load_reset_returned=True)
+    if any(receipt.get(k)!=v for k,v in expected.items()):
+        raise ValueError(f"Historical load receipt disagrees with episode {episode['traj_uid']}")
+    if type(info.get('task_num')) is not int or info['task_num']!=receipt.get('task_id'):
+        raise ValueError('Historical task_num and load receipt disagree')
+    return receipt
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--archives', type=Path, required=True)
@@ -80,6 +92,7 @@ def main():
         group_eps = list(rows(full, folder + '/episodes.jsonl.gz'))
         keys = {(e['run_id'],e['traj_uid']) for e in group_eps} & set(aevents)
         if not keys: continue
+        resets={(r['run_id'],r['traj_uid']):r for r in rows(full,folder+'/group_resets.jsonl.gz')}
         detailed = defaultdict(list)
         for r in rows(full, folder + '/detailed_steps.jsonl.gz'):
             key = (r['run_id'],r['traj_uid'])
@@ -90,12 +103,15 @@ def main():
             boundary = next((r for r in rr if r['step_index'] == stop+1), None)
             if [r['step_index'] for r in prefix] != list(range(stop+1)) or boundary is None or stop+1 >= 30: continue
             ep = eps[key]
+            receipt=source_load_receipt(ep,resets[key])
             ident = hashlib.sha256(('/'.join(key) + '/' + str(stop)).encode()).hexdigest()[:16]
             # Keep only pre-A decisions plus the next decision INPUT. Never future responses.
             candidates.append(dict(prefix_id=ident, source_run_id=key[0], source_trajectory_id=key[1],
                 source_step_id=aevents[key]['analysis_step_id'], source_policy_version=ep['policy_version'],
                 source_checkpoint=None, source_checkpoint_note='exact rollout policy; not assumed to be a saved checkpoint',
-                source_update=update_of(ep), task_id=TASK, variation_id=ep['variation_id'], reset_seed=ep['reset_seed'],
+                source_update=update_of(ep), task_id=TASK, task_num=receipt['task_id'],
+                source_load_receipt=receipt,source_reset_ref=folder+'/group_resets.jsonl.gz#'+key[1],
+                variation_id=ep['variation_id'], reset_seed=ep['reset_seed'],
                 split='train_diagnostic', step_count_at_A=stop+1, remaining_policy_steps=30-stop-1,
                 score_before_A=prefix[-1]['score_pre'], score_after_A=prefix[-1]['score_post'],
                 source_termination_status=prefix[-1]['done_raw'], A_event_evidence=aevents[key],
@@ -115,13 +131,16 @@ def main():
     for i,p in enumerate(selected): p['selection_role']='pilot' if i<2 else 'reserve'
     with (args.out / 'prefixes.jsonl').open('w',encoding='utf-8') as f:
         for p in selected: f.write(json.dumps(p,ensure_ascii=False)+'\n')
-    # Runtime adapter checks the canonical task table. Offline task number comes from recorded reset receipts where possible.
-    task_table=json.loads((args.native_code / 'agent_system/environments/env_package/sciworld/ScienceWorld/scienceworld/tasks.json').read_text())
-    task_num=next(int(k) for k,v in task_table.items() if isinstance(v,dict) and v.get('task_name')==TASK) if isinstance(task_table,dict) else next(i for i,v in enumerate(task_table) if v['task_name']==TASK)
+    # tasks.json is in documentation order; the native server returns a sorted routing list.
+    # The original worker's actual load receipts are authoritative for this dataset.
+    task_nums={p['task_num'] for p in candidates}
+    if len(task_nums)!=1: raise ValueError(f'Historical native task indices missing or inconsistent: {task_nums}')
+    task_num=task_nums.pop()
     pool=json.loads((args.native_code / 'agent_system/environments/env_package/sciworld/variations_idx/L0_idx.json').read_text())['train']
     variations=sorted({int(v) for t,v in pool if int(t)==task_num})
     if len(variations)<4: raise ValueError('Not enough training variations')
-    protocol=dict(protocol_version='skill-bottleneck-v1',task_id=TASK,task_num=task_num,
+    protocol=dict(protocol_version='skill-bottleneck-v1.1-routing',task_id=TASK,task_num=task_num,
+        task_num_source='original native worker load receipts in complete historical group resets',
         natural_variations=variations[:4], reserve_variations=variations[4:8],
         variation_selection='lowest four IDs in the original L0 training pool, fixed before evaluation',
         sampling_seeds=[20261015,20261016], max_policy_steps=30, env_step_limit=100, simplifications='easy',
@@ -130,6 +149,8 @@ def main():
         stage_hint=HINT,label_version=VERSION, primary_prefixes=[p['prefix_id'] for p in selected[:2]],
         reserve_prefixes=[p['prefix_id'] for p in selected[2:]],
         paired_primary_quality=['verified_match'], no_weight_or_optimizer_writes=True)
+    from study import validate_study_pool
+    validate_study_pool(protocol,selected,pool)
     protocol['hint_placement'] = 'append to original user content on each H continuation decision only'
     protocol['natural_reset_seed_rule'] = '20261015 + variation_id; shared across checkpoints and samples'
     protocol['generation_seed_rule'] = 'sample_seed + 1009 * absolute_policy_step_index'
@@ -143,7 +164,7 @@ def main():
         n=next(n for n in z.namelist() if n.endswith('/'+name)); (args.out/name).write_bytes(z.read(n))
     (args.out/'inventory_report.md').write_text(
         '# Local evidence inventory (not an HPC execution report)\n\n'
-        f'Task: `{TASK}`. The merged mainline has {len(episodes)} target episodes, {len(aevents)} '
+        f'Task: `{TASK}`, native routing index {task_num} from original load receipts. The merged mainline has {len(episodes)} target episodes, {len(aevents)} '
         f'evidence-supported A events, and {len(advantages)} linked historical advantage records. '
         f'{len(candidates)} prefixes have contiguous full text through A and the next decision input.\n\n'
         'Lineage: job 161254 updates 1–110; resumed job 162461 updates 111–150. '

@@ -1,0 +1,20 @@
+{
+  "reference_training_commit": "a776c6c84e23d7689ba468e18ca4cc1015715bff",
+  "source_sha256_lf": {
+    "agent_system/environments/env_manager.py": "b2cc1133f523d48f0eb780f694438ad6aad38c9c8983f2295ae5b841d0f156af",
+    "agent_system/environments/env_package/sciworld/envs.py": "0e5d02f24e44d23e36b208e98dc2f950fb7dbd7688c699fe45c9c8ad541775f1",
+    "agent_system/environments/env_package/sciworld/projection.py": "3973f3bd776b97669fcbe12016742b745d762e5a7f641dc1fd02d402b192f1a6",
+    "agent_system/environments/prompts/sciworld.py": "5817ef9f47af40c088e788f58937eb13f794198a4386ce6ce781139121ccf865",
+    "experiments/gigpo_diag/science_contract.py": "b14908263a245830195bb109bf4fa4d9815abe9d17078e4d10dca8ba9c30324e",
+    "scripts/model_merger.py": "19825d000a41e77319a53310840cf444b8ebfdf52c6e37a497df4282f10480ac",
+    "agent_system/environments/env_package/sciworld/variations_idx/L0_idx.json": "151b8942dd58cba74d78115ea7a1cd5eb998cf9c112e51232cb1ef1c87630316",
+    "agent_system/multi_turn_rollout/rollout_loop.py": "37d631e46c3cf8fd595cf61564409fdec7096b37e51aadb4c3b2c58d1c1d4022",
+    "verl/utils/torch_functional.py": "e2dd02383718c856053f1e70f74311b11b92ece40a034f97645c6f7db7310db6"
+  },
+  "reference_jar_sha256": "acf78433198e5464659df7f6bdeb0503bc9b5802c10c27ebc5aa2eb9afe05e90",
+  "reference_classes": {
+    "scienceworld/tasks/goals/GoalSequence.class": "9dc1b351613dfe00c7895a7c3f16a8b2a4a0a0ccaf5713b10ab9debbca4852e6",
+    "scienceworld/tasks/goals/specificgoals/GoalFind.class": "2708526aa3743bcc5f031ccbf0084ad096b003cb2f13375724a732c27c040389",
+    "scienceworld/tasks/specifictasks/TaskLifeSpan.class": "0c8a8e42772cd9b2f5afe54f32162288f6facbbed017bd95f80f56037363ace9"
+  }
+}

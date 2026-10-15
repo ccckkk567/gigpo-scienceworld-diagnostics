@@ -1,0 +1,29 @@
+{
+  "source": "C:\\Users\\19096\\Downloads\\scienceworld-161254-resume162461-u150-pack163057.tar.gz",
+  "source_bytes": 813938338,
+  "source_sha256": "eedf437bb596924d600640e8a2dbfeeebd5900eb9bb4de8db85140b45bfa0cdd",
+  "original_files": 1656,
+  "original_manifest_verified": true,
+  "zip_contents_verified": true,
+  "upload_limit_bytes": 450000000,
+  "packages": [
+    {
+      "file": "01-analysis-and-selected-records.zip",
+      "bytes": 345986399,
+      "sha256": "86d2d5d89098f8a267191562f11e00496ffba971954265e1f8702d307b4dae65",
+      "original_files": 39
+    },
+    {
+      "file": "02-complete-trajectory-groups.zip",
+      "bytes": 254086222,
+      "sha256": "8c60ab88dfef638771c961c756d8c57784a68a68507d4c6efa4357ef45242610",
+      "original_files": 1440
+    },
+    {
+      "file": "03-original-logs-and-provenance.zip",
+      "bytes": 283197249,
+      "sha256": "10ab786cece6fa04c0c3e1bd4fa9372966c30823ca576f384b7382657510dd83",
+      "original_files": 177
+    }
+  ]
+}

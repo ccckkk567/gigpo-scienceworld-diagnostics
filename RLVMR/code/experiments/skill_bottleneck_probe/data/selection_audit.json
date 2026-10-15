@@ -1,0 +1,41 @@
+{
+  "task_episodes": 408,
+  "A_events": 58,
+  "full_text_prefix_candidates": 10,
+  "selected_prefixes": 4,
+  "advantages_found": 58,
+  "source_lineage": "161254 updates 1..110;162461 updates111..150",
+  "candidate_ids": [
+    "48959b57b45b8fb9",
+    "3a64c50af09543fe",
+    "1d7c46c19a7de795",
+    "ba8d7dd0bae49fc0",
+    "8ecfc298a5c09fee",
+    "f0d2906969935da5",
+    "ee211d77ad0e7836",
+    "5fc57e0133a566e6",
+    "92499e4696aefa73",
+    "b14456f7eedb9c48"
+  ],
+  "training_stages": {
+    "1-35": {
+      "episodes": 96,
+      "strict_success": 0
+    },
+    "36-75": {
+      "episodes": 104,
+      "strict_success": 0,
+      "A_reached": 9
+    },
+    "76-110": {
+      "episodes": 72,
+      "strict_success": 0,
+      "A_reached": 12
+    },
+    "111-150": {
+      "episodes": 136,
+      "strict_success": 0,
+      "A_reached": 37
+    }
+  }
+}

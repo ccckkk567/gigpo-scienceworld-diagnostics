@@ -1,0 +1,55 @@
+{
+  "protocol_version": "skill-bottleneck-v1",
+  "task_id": "lifespan-longest-lived-then-shortest-lived",
+  "task_num": 22,
+  "natural_variations": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "reserve_variations": [
+    4,
+    5,
+    6,
+    7
+  ],
+  "variation_selection": "lowest four IDs in the original L0 training pool, fixed before evaluation",
+  "sampling_seeds": [
+    20261015,
+    20261016
+  ],
+  "max_policy_steps": 30,
+  "env_step_limit": 100,
+  "simplifications": "easy",
+  "dataset_role": "train_diagnostic",
+  "checkpoint_ids": [
+    "base",
+    "u50",
+    "u110",
+    "u150"
+  ],
+  "temperature": 0.4,
+  "top_p": 1.0,
+  "top_k": -1,
+  "max_response_tokens": 1024,
+  "max_prompt_tokens": 6000,
+  "stage_hint": "According to the previous environment feedback, the first subgoal of the original task has been completed. Continue with the remaining part of the original task.",
+  "label_version": "lifespan-ordered-focus-v1",
+  "primary_prefixes": [
+    "48959b57b45b8fb9",
+    "1d7c46c19a7de795"
+  ],
+  "reserve_prefixes": [
+    "ba8d7dd0bae49fc0",
+    "5fc57e0133a566e6"
+  ],
+  "paired_primary_quality": [
+    "verified_match"
+  ],
+  "no_weight_or_optimizer_writes": true,
+  "hint_placement": "append to original user content on each H continuation decision only",
+  "natural_reset_seed_rule": "20261015 + variation_id; shared across checkpoints and samples",
+  "generation_seed_rule": "sample_seed + 1009 * absolute_policy_step_index",
+  "resource_adaptation": "one GPU, tensor_parallel_size=1, eager inference, sequential trials"
+}

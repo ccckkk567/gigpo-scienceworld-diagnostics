@@ -13,8 +13,8 @@ umask 077
 unset PYTHONPATH PYTHONHOME PYTHONUSERBASE
 base=/scratch/prjsnnn0000269/Students/shuming/cjk
 jobs=$(squeue -h -u "$USER" -o '%j')
-if printf '%s\n' "$jobs" | grep -Eq '^ggp-sci-(train|resume)'; then
-    echo 'ScienceWorld training is active; archive and cleanup were not started.'
+if printf '%s\n' "$jobs" | grep -Eq '^(ggp-sci-(train|resume)|sci-skill-(pilot|exp2))'; then
+    echo 'ScienceWorld training or checkpoint evaluation is active; archive and cleanup were not started.'
     exit 1
 fi
 # Load the existing token without echoing it or placing it in command arguments.

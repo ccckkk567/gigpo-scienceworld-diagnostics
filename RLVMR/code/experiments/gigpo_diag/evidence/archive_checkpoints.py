@@ -216,6 +216,9 @@ def run(root, state, hub, delete):
             f.write(json.dumps(data) + '\n'); f.flush(); os.fsync(f.fileno())
         print(json.dumps(data), flush=True)
     event(action='start', repo=REPO, retained=[e['path'] for e in plan['entries'] if e['keep']],
+          delete_enabled=delete,
+          planned_cleanup_GiB=sum(v['size'] for e in plan['entries'] if not e['keep']
+                                  for v in e['files'].values()) / 2**30,
           inventoried_GiB=sum(v['size'] for e in plan['entries'] for v in e['files'].values()) / 2**30)
     readme = Path(__file__).with_name('HF_CHECKPOINT_README.md')
     readme_meta = stamp(readme); readme_meta.update(hash_file(readme, readme_meta))

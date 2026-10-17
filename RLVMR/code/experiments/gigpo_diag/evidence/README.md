@@ -118,5 +118,12 @@ checkpoint pointers remain in place and can refer to now-archived directories.
 
 Submit from the existing evidence tool checkout with
 `sbatch archive_checkpoints.sbatch`. Log: `sci-ckpt-hf-<job>.log` in that directory.
+As authorized again on 2026-10-17, the batch job enables verified cleanup with
+`--delete`, retaining the complete step 150 locally. It refuses to start while
+ScienceWorld training/resume or `sci-skill-pilot`/`sci-skill-exp2` jobs are queued
+or running. Do not start another checkpoint-consuming experiment during cleanup.
+The initial log reports inventoried GiB and planned old-checkpoint cleanup GiB;
+on retries the latter is the original inventory total, not remaining bytes.
+The final result reports bytes actually deleted in that invocation.
 Tests: `python -m unittest test_archive_checkpoints -v` (synthetic local Hub
 fixtures; actual HPC transfer and free-space results are confirmed by job logs).
